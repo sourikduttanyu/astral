@@ -34,25 +34,32 @@ everything.
 
 ## Install
 
-Astral is a standard Claude Code plugin (manifest + hooks + commands).
+One line. Idempotent — safe to re-run.
 
 ```bash
-git clone <this-repo> ~/astral
+# macOS / Linux / WSL / Git Bash
+curl -fsSL https://raw.githubusercontent.com/sourikduttanyu/astral/master/install.sh | bash
 ```
 
-Then add it to your Claude Code config (`~/.claude/settings.json`):
-
-```json
-{
-  "plugins": ["~/astral"]
-}
+```powershell
+# Windows (PowerShell 5.1+)
+irm https://raw.githubusercontent.com/sourikduttanyu/astral/master/install.ps1 | iex
 ```
 
-Or, to wire just the hooks manually, point your settings `hooks` at
-`~/astral/hooks/hooks.json` style entries (paths use `${CLAUDE_PLUGIN_ROOT}`).
+~10 seconds. Needs `python3` + `git` (both preinstalled on macOS/Linux). It clones
+to `~/.claude/astral`, drops the commands into `~/.claude/commands/astral/`, and
+merges the two hooks into `~/.claude/settings.json` (your other settings/hooks are
+preserved). **Restart Claude Code** (or run `/hooks`) after install.
 
-Requires `python3` (preinstalled on macOS/Linux). Restart your session after
-installing.
+Then type **`/astral:help`** to get started. Warnings fire on their own.
+
+**Uninstall:** `ASTRAL_UNINSTALL=1 bash install.sh` (or `$env:ASTRAL_UNINSTALL=1` on Windows).
+
+### Manual / as a plugin
+
+Prefer the plugin loader? Clone anywhere and reference it; the repo is also a valid
+Claude Code plugin (`.claude-plugin/plugin.json` + `hooks/hooks.json`, paths use
+`${CLAUDE_PLUGIN_ROOT}`).
 
 ## Config (env vars)
 

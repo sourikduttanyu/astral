@@ -187,7 +187,10 @@ Opus 4.8 a 1M window in the same session; Cursor lets you pick. So a model id do
    already exceeds a known tier (200K, 1M) with no compaction, the window is
    provably larger, so Astral snaps it up to the next tier automatically. A 1M
    session is detected without any config (no false alarms), and a 200K tier is
-   never under-warned.
+   never under-warned. This is **sticky** for the session: once occupancy proves
+   a larger window, a later `/compact` shrinks the token count but never the
+   window (the window is a model/tier property, not current usage). A real
+   `/clear` starts a fresh session and re-resolves.
 
 The current model id *is* read every prompt (from the transcript). When the model
 **changes** and the window is genuinely ambiguous, the Watcher asks you (via Claude's

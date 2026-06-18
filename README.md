@@ -56,6 +56,12 @@ preserved). **Restart Claude Code** (or run `/hooks`) after install.
 
 Then type **`/astral:help`** to get started. Warnings fire on their own.
 
+**Update:** re-run the same one-line install command. It `git pull`s the clone,
+re-copies commands, and re-merges hooks — so fixes actually reach your live setup.
+(The hooks run from the clone; commands are copied, so a bare `git pull` updates
+scripts but not commands — re-running the installer is the reliable path.) Restart
+Claude Code afterward.
+
 **Uninstall:** `ASTRAL_UNINSTALL=1 bash install.sh` (or `$env:ASTRAL_UNINSTALL=1` on Windows).
 
 ### Manual / as a plugin
@@ -74,6 +80,7 @@ interpreter that ran it.
 | `ASTRAL_WINDOW` | `200000` | Assumed context window, tokens |
 | `ASTRAL_BUCKETS` | `50,65,80` | Warn bands (percent) |
 | `ASTRAL_READ_TOKENS` | `8000` | Est-token threshold (bytes/4) that gates an unbounded read |
+| `ASTRAL_READ_ALLOW` | *(empty)* | Comma-separated globs that bypass the read-gate (matched on full path + basename), e.g. `*/CHANGELOG.md,*.csv` |
 | `ASTRAL_STALE_DAYS` | `60` | `/astral:audit`: days since last use before an agent/skill is "stale" |
 
 ## Layout

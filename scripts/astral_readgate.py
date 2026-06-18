@@ -10,15 +10,23 @@ Size is judged in estimated TOKENS (file bytes / 4), not line count: a 400-line
 minified file is huge, 1500 short lines is tiny. Uses os.path.getsize - no
 reading the file on the hot path.
 
-Tune with env var:
+Tune with env vars:
   ASTRAL_READ_TOKENS  token estimate that triggers the gate (default 8000)
+  ASTRAL_READ_ALLOW   comma-separated globs to never gate (matched against the
+                      full path and the basename), e.g. "*/CHANGELOG.md,*.csv"
 """
-import sys, os, json
+import sys, os, json, fnmatch
 
 LIMIT = int(os.environ.get("ASTRAL_READ_TOKENS", "8000"))
+ALLOW = [p.strip() for p in os.environ.get("ASTRAL_READ_ALLOW", "").split(",") if p.strip()]
 # Read handles these specially (visual / paged); size-gating them is wrong.
 SKIP_EXT = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg",
             ".pdf", ".ipynb"}
+
+
+def _allowed(path):
+    base = os.path.basename(path)
+    return any(fnmatch.fnmatch(path, p) or fnmatch.fnmatch(base, p) for p in ALLOW)
 
 
 def main():
@@ -38,6 +46,8 @@ def main():
     if not path or not os.path.isfile(path):
         sys.exit(0)
     if os.path.splitext(path)[1].lower() in SKIP_EXT:
+        sys.exit(0)
+    if _allowed(path):            # user opted this path out of the gate
         sys.exit(0)
 
     try:

@@ -40,7 +40,19 @@ if isinstance(sl,dict) and "astral_statusline" in sl.get("command",""):
     s.pop("statusLine",None)
 json.dump(s,open(p,"w"),indent=2)
 '@
-  Say "removed. Restart Claude Code."; exit 0
+  & $PY - "$HOME\.claude.json" @'
+import json,sys
+p=sys.argv[1]
+try: d=json.load(open(p))
+except Exception: sys.exit(0)
+m=d.get("mcpServers")
+if isinstance(m,dict) and "astral-recall" in m:
+    m.pop("astral-recall")
+    if m: d["mcpServers"]=m
+    else: d.pop("mcpServers",None)
+    json.dump(d,open(p,"w"),indent=2)
+'@
+  Say "removed (incl. recall MCP). Restart Claude Code."; exit 0
 }
 
 # Managed mirror: if a plain ff-only pull fails (dirty/diverged clone), sync hard
@@ -75,9 +87,13 @@ def strip(evt):
         hs=[x for x in e.get("hooks",[]) if "astral_" not in x.get("command","")]
         if hs: e["hooks"]=hs; out.append(e)
     return out
+prec = os.path.join(scripts,"astral_precompact.py")
 ups=strip("UserPromptSubmit"); ups.append({"hooks":[{"type":"command","command":f'"{py}" "{mon}"'}]})
 pre=strip("PreToolUse");       pre.append({"matcher":"Read","hooks":[{"type":"command","command":f'"{py}" "{gate}"'}]})
-h["UserPromptSubmit"]=ups; h["PreToolUse"]=pre; s["hooks"]=h
+pc=strip("PreCompact")
+for trig in ("auto","manual"):
+    pc.append({"matcher":trig,"hooks":[{"type":"command","command":f'"{py}" "{prec}"'}]})
+h["UserPromptSubmit"]=ups; h["PreToolUse"]=pre; h["PreCompact"]=pc; s["hooks"]=h
 
 # statusline: set the Astral badge only if no statusline exists. Cross-shell
 # chaining isn't safe to auto-generate on Windows, so if one's already set we
@@ -94,6 +110,24 @@ elif "astral_statusline" not in (cur.get("command","") if isinstance(cur,dict) e
 os.makedirs(os.path.dirname(settings),exist_ok=True)
 json.dump(s,open(settings,"w"),indent=2)
 print("[astral] hooks merged into",settings)
+'@
+
+# Register the recall MCP server (user scope). Machine-independent interpreter:
+# "python" on PATH, not an absolute install-machine path.
+& $PY - "$HOME\.claude.json" "$Dir\servers\astral_recall_mcp.py" @'
+import json,sys,os
+cfg, server = sys.argv[1], sys.argv[2]
+try: d=json.load(open(cfg))
+except Exception: d={}
+m=d.get("mcpServers") or {}
+want={"command":"python","args":[server]}
+if m.get("astral-recall")!=want:
+    m["astral-recall"]=want; d["mcpServers"]=m
+    os.makedirs(os.path.dirname(cfg) or ".",exist_ok=True)
+    json.dump(d,open(cfg,"w"),indent=2)
+    print("[astral] recall MCP server registered in",cfg)
+else:
+    print("[astral] recall MCP server already registered")
 '@
 
 Say "done. Restart Claude Code (or /hooks to reload)."

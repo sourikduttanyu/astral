@@ -51,7 +51,19 @@ if isinstance(sl,dict) and "astral_statusline" in sl.get("command",""):
 s.pop("_astralPrevStatusLine",None)
 json.dump(s,open(p,"w"),indent=2)
 PY
-  say "removed hooks + commands + statusline. Repo left at $DIR (rm -rf to delete). Restart Claude Code."
+  python3 - "$HOME/.claude.json" <<'PY'
+import json,sys
+p=sys.argv[1]
+try: d=json.load(open(p))
+except Exception: sys.exit(0)
+m=d.get("mcpServers")
+if isinstance(m,dict) and "astral-recall" in m:
+    m.pop("astral-recall")
+    if m: d["mcpServers"]=m
+    else: d.pop("mcpServers",None)
+    json.dump(d,open(p,"w"),indent=2)
+PY
+  say "removed hooks + commands + statusline + recall MCP. Repo left at $DIR (rm -rf to delete). Restart Claude Code."
   exit 0
 fi
 
@@ -83,6 +95,7 @@ settings, scripts = sys.argv[1], sys.argv[2]
 py   = sys.executable or "python3"   # wire the exact interpreter that ran install
 mon  = os.path.join(scripts,"astral_monitor.py")
 gate = os.path.join(scripts,"astral_readgate.py")
+prec = os.path.join(scripts,"astral_precompact.py")
 try:
     s=json.load(open(settings))
 except Exception:
@@ -98,8 +111,12 @@ ups=strip("UserPromptSubmit")
 ups.append({"hooks":[{"type":"command","command":f'"{py}" "{mon}"'}]})
 pre=strip("PreToolUse")
 pre.append({"matcher":"Read","hooks":[{"type":"command","command":f'"{py}" "{gate}"'}]})
+pc=strip("PreCompact")
+for trig in ("auto","manual"):
+    pc.append({"matcher":trig,"hooks":[{"type":"command","command":f'"{py}" "{prec}"'}]})
 h["UserPromptSubmit"]=ups
 h["PreToolUse"]=pre
+h["PreCompact"]=pc
 s["hooks"]=h
 
 # ---- statusline: Astral context badge, chained after any existing one ----
@@ -133,5 +150,33 @@ json.dump(s,open(settings,"w"),indent=2)
 print("[astral] hooks merged into",settings)
 PY
 
+# ---- register recall MCP server (~/.claude.json, user scope) ----
+# Machine-independent: interpreter is "python3" on PATH (not an absolute
+# install-machine path), and the server is referenced via ${HOME} expansion so
+# the same entry resolves on any machine with the standard clone location.
+python3 - "$HOME/.claude.json" "$DIR/servers/astral_recall_mcp.py" <<'PY'
+import json,sys,os
+cfg, server = sys.argv[1], sys.argv[2]
+home=os.path.expanduser("~")
+# Reference the server portably when it lives under $HOME (the default clone
+# path); fall back to the literal path for a custom ASTRAL_DIR outside $HOME.
+if server.startswith(home + os.sep):
+    server="${HOME}" + server[len(home):]
+try:
+    d=json.load(open(cfg))
+except Exception:
+    d={}
+m=d.get("mcpServers") or {}
+want={"command":"python3","args":[server]}
+if m.get("astral-recall")!=want:        # idempotent: only rewrite if it changed
+    m["astral-recall"]=want
+    d["mcpServers"]=m
+    os.makedirs(os.path.dirname(cfg) or ".",exist_ok=True)
+    json.dump(d,open(cfg,"w"),indent=2)
+    print("[astral] recall MCP server registered in",cfg)
+else:
+    print("[astral] recall MCP server already registered")
+PY
+
 say "done. Restart Claude Code (or run /hooks to reload)."
-say "warns before autocompact - /astral:checkpoint to shed done work - /astral:status for level"
+say "warns before autocompact - /astral:checkpoint to shed done work - recall() re-fetches evicted context"

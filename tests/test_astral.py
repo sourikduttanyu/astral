@@ -293,6 +293,21 @@ class TestPerSessionState(unittest.TestCase):
         with open(os.path.join(self.dir, ".astral", "window"), "w") as f:
             f.write(str(v))
 
+    def _write_store_manifest(self, updated):
+        d = os.path.join(self.dir, ".astral", "store")
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "manifest.json"), "w") as f:
+            json.dump({"updated": updated, "watermark": 1}, f)
+
+    # --- recall nudge: fires once per compaction (store manifest advances) ---
+    def test_recall_nudge_fires_once_per_compaction(self):
+        self._write_store_manifest("T1")
+        self.assertIn("recall(query)", self._run(sid="r"))
+        self.assertEqual(self._state("r")["store_seen"], "T1")
+        self.assertNotIn("recall(query)", self._run(sid="r"))   # same store, no repeat
+        self._write_store_manifest("T2")                         # new compaction
+        self.assertIn("recall(query)", self._run(sid="r"))
+
     # --- happy: two terminals in one project don't clobber each other ---
     def test_sessions_isolated(self):
         a = _transcript([(0, 150000, 0)])   # 75% of 200k -> warns

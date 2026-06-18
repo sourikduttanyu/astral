@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "astral-recall": {
+      "command": "python3",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/servers/astral_recall_mcp.py"],
+      "env": {
+        "ASTRAL_STORE_DIR": "${CLAUDE_PROJECT_DIR}/.astral/store"
+      }
+    }
+  }
+}

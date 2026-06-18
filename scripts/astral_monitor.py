@@ -144,6 +144,16 @@ def state_name(session_id):
     return f"state-{sid}.json" if sid else "state.json"
 
 
+def store_updated(cwd):
+    """Timestamp of the last PreCompact store write, or '' if no store yet.
+    Lets the Watcher nudge about recall() exactly once per compaction."""
+    try:
+        with open(os.path.join(cwd, ".astral", "store", "manifest.json")) as f:
+            return json.load(f).get("updated", "")
+    except Exception:
+        return ""
+
+
 def main():
     try:
         data = json.load(sys.stdin)
@@ -174,12 +184,18 @@ def main():
     # must be able to fire even if a higher band already fired at the larger one).
     last = prev.get("band", 0) if prev.get("window") == window else 0
 
+    # Nudge about recall() once per compaction: fire when the PreCompact store's
+    # timestamp has advanced since we last saw it.
+    seen = store_updated(cwd)
+    store_nudge = bool(seen and seen != prev.get("store_seen", ""))
+
     cur = band(pct)
     try:
         os.makedirs(state_dir, exist_ok=True)
         with open(state_path, "w") as f:
             json.dump({"tokens": tokens, "pct": pct, "window": window,
-                       "model": model, "source": source, "band": cur}, f)
+                       "model": model, "source": source, "band": cur,
+                       "store_seen": seen}, f)
     except OSError:
         pass
 
@@ -206,6 +222,12 @@ def main():
             f"\n[Astral] Context ~{pct}% (~{tokens} tok / {window}). "
             "Tell the user what work is DONE, then offer `/astral:checkpoint` to "
             "summarize + drop finished work so you never hit autocompact."
+        )
+    if store_nudge:
+        out += (
+            "\n[Astral] A compaction just occurred; earlier turns were snapshotted to "
+            "Astral's store. If you need detail that's no longer in context, call the "
+            "`recall(query)` tool (Astral MCP) to re-fetch it instead of guessing."
         )
 
     print(json.dumps({

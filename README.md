@@ -46,6 +46,9 @@ Five pieces, each a concrete outcome, plus a status command:
 - **Stop paying rent on dead tooling.** An **Audit** scans your installed agents and
   skills against real usage, flags the never-used or stale ones that load every
   session, and gives you reversible commands to prune them.
+- **Get evicted context back.** Before compaction, a **Recall** store snapshots the
+  about-to-be-dropped turns; a `recall(query)` tool lets Claude re-fetch the right
+  slice on demand — see [Recall](#recall-re-fetch-evicted-context).
 
 Plus `/astral:status` to see your current level and what's done at any time.
 
@@ -57,6 +60,7 @@ Plus `/astral:status` to see your current level and what's done at any time.
 | **Switch-guard** | every prompt | If your prompt starts work unrelated to the current session, suggests `/clear` first; if you decline, offers a checkpoint of what's droppable. |
 | **Status** | `/astral:status` | Shows current context level + completed vs in-flight work. |
 | **Audit** | `/astral:audit` | Scans every installed agent/skill against real usage in your transcripts. Flags ones **never used** or **stale** (>60d) — dead weight loaded into *every* session — and hands you reversible `mv … .disabled/` commands. Reports tokens reclaimed. |
+| **Recall** | `PreCompact` + `recall()` tool | Snapshots about-to-be-evicted turns to `.astral/store/` and indexes them; the `recall(query)` MCP tool re-fetches the right slice when a later step needs context that compaction dropped. |
 
 ---
 
@@ -212,10 +216,37 @@ a file by `bytes / 4`. Over the `ASTRAL_READ_TOKENS` threshold and unbounded, it
 the read to a subagent (Explore or general-purpose) that reads and summarizes in its
 own context, so your main window only receives the summary.
 
-**Hooks instruct; Claude acts.** Astral ships two hooks — `astral_monitor.py`
-(`UserPromptSubmit`: Watcher + Switch-guard) and `astral_readgate.py`
-(`PreToolUse: Read`). Hooks can't render menus or spawn subagents themselves; they
-*instruct Claude*, and Claude drives the `AskUserQuestion` picker and subagent dispatch.
+**Hooks instruct; Claude acts.** Astral ships three hooks — `astral_monitor.py`
+(`UserPromptSubmit`: Watcher + Switch-guard), `astral_readgate.py`
+(`PreToolUse: Read`), and `astral_precompact.py` (`PreCompact`: the capture store
+below). Hooks can't render menus or spawn subagents themselves; they *instruct
+Claude*, and Claude drives the `AskUserQuestion` picker and subagent dispatch.
+
+---
+
+## Recall (re-fetch evicted context)
+
+Compaction shrinks what's *in context*, but it doesn't delete the transcript — the
+evicted turns still exist on disk. Astral makes them **retrievable** so a later step
+can pull the right slice back.
+
+- **Capture (a hook).** `astral_precompact.py` runs on `PreCompact` (auto-compact
+  *and* manual `/compact`). It snapshots the about-to-be-evicted turns to readable
+  files under `.astral/store/snap-<ts>/` and indexes them. A line **watermark** keeps
+  this incremental — repeated compactions only process new turns, never re-copy.
+- **Re-fetch (a tool).** Astral ships a small MCP server exposing one tool,
+  **`recall(query, k)`**, that searches the store and returns the top matching chunks.
+  A hook can't act mid-turn, but a *tool* can: the model calls `recall()` itself when
+  it needs detail that's no longer in context, so re-hydration looks automatic.
+
+**Storage is hybrid and dependency-free.** The snapshot files are the durable truth;
+the search index is **SQLite FTS5** (`sqlite3` is stdlib — no `pip install`) for BM25
+ranking, treated as derived and rebuildable. If a runtime lacks FTS5, it falls back to
+a pure-stdlib keyword scan over the same files — so the store works everywhere, only
+search speed varies. No embeddings / vector DB in core (that would need third-party
+deps or a remote API call); an optional embedding layer is a possible future add-on.
+
+Disable the whole thing with `ASTRAL_STORE=0`. Tune results with `ASTRAL_RECALL_K`.
 
 ---
 
@@ -228,6 +259,9 @@ own context, so your main window only receives the summary.
 | `ASTRAL_READ_TOKENS` | `8000` | Est-token threshold (bytes/4) that gates an unbounded read. |
 | `ASTRAL_READ_ALLOW` | *(empty)* | Comma-separated globs that bypass the read-gate (matched on full path + basename), e.g. `*/CHANGELOG.md,*.csv`. |
 | `ASTRAL_STALE_DAYS` | `60` | `/astral:audit`: days since last use before an agent/skill is "stale". |
+| `ASTRAL_STORE` | *(on)* | Set to `0`/`off` to disable the PreCompact capture store — see [Recall](#recall-re-fetch-evicted-context). |
+| `ASTRAL_RECALL_K` | `5` | Default number of chunks `recall()` returns. |
+| `ASTRAL_STORE_DIR` | *(project `.astral/store`)* | Override where the recall store lives (the MCP server reads this). |
 
 ### Why these thresholds
 
@@ -304,11 +338,15 @@ See [`bench/README.md`](bench/README.md) for method (arms, 3+ runs, caveats).
 ```
 astral/
   .claude-plugin/plugin.json   manifest
+  .mcp.json                    recall MCP server wiring
   hooks/hooks.json             hook wiring
   scripts/astral_monitor.py    watcher + switch-guard (UserPromptSubmit)
   scripts/astral_readgate.py   large-read delegation (PreToolUse: Read)
+  scripts/astral_precompact.py capture store (PreCompact)
   scripts/astral_audit.py      unused-agent/skill auditor (/astral:audit)
   scripts/astral_statusline.py context-budget badge (statusLine)
+  scripts/astral_store.py      snapshot index (FTS5 / scan)
+  servers/astral_recall_mcp.py recall(query) MCP server
   commands/checkpoint.md       /astral:checkpoint
   commands/status.md           /astral:status
   commands/audit.md            /astral:audit

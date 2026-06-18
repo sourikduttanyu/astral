@@ -71,6 +71,7 @@ Verified primitives (official docs):
 ## Architecture
 
 ### New files
+
 - `scripts/astral_precompact.py` — `PreCompact` hook. Reads `transcript_path`,
   takes new-since-watermark turns, snapshots them as readable files in
   `.astral/store/snap-<ts>/`, chunks per-turn, and indexes the chunks into the
@@ -84,6 +85,7 @@ Verified primitives (official docs):
   `python3 ${CLAUDE_PLUGIN_ROOT}/servers/astral_recall_mcp.py`.
 
 ### Edits
+
 - `hooks/hooks.json` — add `PreCompact` (matcher `auto` + `manual`).
 - `scripts/astral_monitor.py` — post-compaction nudge: tell the model evicted
   detail is recallable via `recall()`.
@@ -94,6 +96,7 @@ Verified primitives (official docs):
   increment (no re-copy), JSON-RPC handshake + a `recall` call.
 
 ### Data flow
+
 context fills → `PreCompact(auto)` fires → snapshot + index evicted slice →
 compaction proceeds → later step needs dropped data → model calls
 `recall("...")` → slice returns to context. Model-initiated ⇒ looks automatic.

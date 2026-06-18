@@ -21,6 +21,7 @@ def _load(name):
 monitor = _load("astral_monitor.py")
 audit = _load("astral_audit.py")
 statusline = _load("astral_statusline.py")
+store = _load("astral_store.py")
 
 
 def _transcript(rows):
@@ -335,6 +336,75 @@ class TestPerSessionState(unittest.TestCase):
             self.assertNotIn("Model changed", self._run(p, sid="s", env={"ASTRAL_WINDOW": "300000"}))
         finally:
             os.unlink(p)
+
+
+class TestStore(unittest.TestCase):
+    CHUNKS = [
+        {"cid": "a", "source": "snap-1", "text": "the auth middleware checks token expiry"},
+        {"cid": "b", "source": "snap-1", "text": "database connection pool reuses sockets"},
+        {"cid": "c", "source": "snap-2", "text": "the readgate delegates large file reads to a subagent"},
+    ]
+
+    def _store(self, force_scan):
+        d = tempfile.mkdtemp()
+        return store.Store(d, backend_override="scan" if force_scan else None)
+
+    def _index(self, force_scan):
+        s = self._store(force_scan)
+        s.add(self.CHUNKS)
+        return s
+
+    def test_search_finds_right_chunk_both_backends(self):
+        for scan in (False, True):
+            s = self._index(scan)
+            hits = s.search("token expiry", k=3)
+            self.assertTrue(hits, f"scan={scan}")
+            self.assertEqual(hits[0]["cid"], "a", f"scan={scan} -> {hits}")
+
+    def test_empty_query_returns_nothing(self):
+        for scan in (False, True):
+            self.assertEqual(self._index(scan).search("   !!! ", k=3), [])
+
+    def test_k_limit_respected(self):
+        for scan in (False, True):
+            s = self._index(scan)
+            self.assertLessEqual(len(s.search("the", k=2)), 2)
+
+    def test_punctuation_query_is_safe(self):
+        # FTS5 syntax chars must not raise; should still match on the word tokens.
+        s = self._index(False)
+        hits = s.search('subagent: "reads"? (file)', k=3)
+        self.assertEqual(hits[0]["cid"], "c")
+
+    def test_durable_corpus_written(self):
+        s = self._index(False)
+        self.assertTrue(os.path.isfile(s.corpus))
+        with open(s.corpus) as f:
+            self.assertEqual(sum(1 for _ in f), 3)
+
+    def test_scan_rebuildable_from_corpus(self):
+        # A fresh scan-backed Store over the same dir searches the persisted corpus
+        # (proves the index is rebuildable / the corpus is the durable source).
+        s = self._index(False)
+        reopened = store.Store(s.dir, backend_override="scan")
+        self.assertEqual(reopened.search("database pool", k=1)[0]["cid"], "b")
+
+    def test_blank_chunks_skipped(self):
+        s = self._store(True)
+        self.assertEqual(s.add([{"cid": "x", "source": "s", "text": "   "}]), 0)
+
+    def test_chunk_turns_groups_per_turn(self):
+        msgs = [
+            {"role": "user", "uuid": "u1", "text": "fix the bug"},
+            {"role": "assistant", "text": "found it in auth.py"},
+            {"role": "user", "uuid": "u2", "text": "now add a test"},
+            {"role": "assistant", "text": "added test_auth"},
+        ]
+        chunks = store.chunk_turns(msgs)
+        self.assertEqual(len(chunks), 2)
+        self.assertEqual(chunks[0]["cid"], "u1")
+        self.assertIn("auth.py", chunks[0]["text"])
+        self.assertIn("add a test", chunks[1]["text"])
 
 
 class TestStatusline(unittest.TestCase):

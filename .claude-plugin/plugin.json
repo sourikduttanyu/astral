@@ -1,0 +1,10 @@
+{
+  "name": "astral",
+  "version": "0.1.0",
+  "description": "Context-budget manager for Claude Code. Watches the 'mana pool', warns before autocompact, checkpoints finished work so you can shed it, delegates large reads to subagents, and guards against unrelated context switches. Dota-themed (Astral Imprison: banish context, recall later).",
+  "author": {
+    "name": "sourik",
+    "email": "sourik1999dutta@gmail.com"
+  },
+  "hooks": "./hooks/hooks.json"
+}

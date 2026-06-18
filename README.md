@@ -101,6 +101,69 @@ ran it.
 
 ---
 
+## Example usage
+
+Nothing to learn up front — the Watcher and Read-gate run on their own after install.
+The commands are there for when you want to act.
+
+**First run — confirm it's live:**
+
+```bash
+/astral:status   # current context %, window, model, band
+/astral:help     # commands + config at a glance
+```
+
+You'll also start seeing the badge — `[ASTRAL 23%]` — in your statusline.
+
+### Common use cases
+
+**1. A long session creeping toward auto-compact.**
+The badge passes 55%. Astral tells you what's already DONE and offers a checkpoint.
+Run it, pick the finished work, paste the `/compact` line it gives you:
+
+```bash
+/astral:checkpoint
+```
+
+The done work is summarized to a durable `.astral/checkpoint-<ts>.md` and shed from
+context — the live thread stays. No surprise compaction mid-task.
+
+**2. Reading a big file or log without flooding context.**
+You `Read` a 5,000-line log. The Read-gate intercepts and offers to hand it to a
+subagent, so only the answer comes back — not 50K tokens of raw log. Allow the direct
+read or let it delegate. Nothing to type.
+
+**3. Switching models mid-session (Opus ↔ Sonnet).**
+Different windows (Sonnet 200K, Opus 1M). On a model change Astral asks which window
+applies. You can also set it directly:
+
+```bash
+/astral:window opus     # 1M basis
+/astral:window sonnet   # 200K basis
+/astral:window 500000   # custom (e.g. a Cursor window)
+/astral:window auto     # back to auto-detect
+```
+
+Usually you won't need this — auto-detect locks onto the proven window and keeps it
+across compactions.
+
+**4. Pruning tooling you never use.**
+Agents and skills load into *every* session. Find and disable the dead weight:
+
+```bash
+/astral:audit    # flags never-used or stale (>60d) agents/skills, reports tokens reclaimed
+```
+
+**5. Starting something unrelated.**
+Type a prompt off-topic from the current session and the Switch-guard suggests
+`/clear` first (or a checkpoint of what's droppable) — so old context doesn't bleed
+into new work.
+
+**Mental model:** `status` to look, `checkpoint` to shed, `window` to fix the basis,
+`audit` to prune. The Watcher and Read-gate handle the rest hands-off.
+
+---
+
 ## How it works
 
 *Mechanics for the curious. Skip to [Config](#config-env-vars) if you just want it
@@ -204,8 +267,12 @@ Read this before you trust it. Nothing here is magic, and nothing happens withou
 
 The installer also wires a small statusline badge — `[ASTRAL 32%]` — that shows your
 current context level, colored by band (calm → amber → red as you approach
-auto-compact). It reads the same `.astral/state.json` the Watcher writes, so it costs
-nothing extra.
+auto-compact). It tracks live: Claude Code hands the statusline command a
+`context_window` object on stdin every render (since v2.1.132) with a pre-computed
+`used_percentage` against the *real* window size, so the badge reflects reality with
+no extra cost and no window guesswork. When that field is absent — older Claude Code,
+or the brief gap right after a `/compact` before the next API call — it falls back to
+the per-session `.astral/state-<id>.json` the Watcher writes.
 
 If you already have a statusline (e.g. the [caveman](https://github.com/JuliusBrussee/caveman)
 badge — another lightweight Claude Code plugin worth a look), the macOS/Linux installer

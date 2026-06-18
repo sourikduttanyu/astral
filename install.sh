@@ -56,8 +56,16 @@ PY
 fi
 
 # ---- fetch / update repo ----
+# The clone is a managed mirror, not a dev workspace. A plain ff-only pull dies
+# if it ever ends up dirty or diverged (local edits, an interrupted update), so
+# fall back to syncing it hard to origin instead of failing the whole install.
 if [ -d "$DIR/.git" ]; then
-  say "updating $DIR..."; git -C "$DIR" pull --ff-only -q || die "git pull failed."
+  say "updating $DIR..."
+  git -C "$DIR" pull --ff-only -q 2>/dev/null || {
+    say "fast-forward failed (clone dirty or diverged); resetting to origin..."
+    git -C "$DIR" fetch -q origin || die "git fetch failed."
+    git -C "$DIR" reset --hard -q '@{u}' || die "git reset failed."
+  }
 else
   say "cloning into $DIR..."; mkdir -p "$(dirname "$DIR")"; git clone -q "$REPO" "$DIR"
 fi

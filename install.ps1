@@ -43,7 +43,17 @@ json.dump(s,open(p,"w"),indent=2)
   Say "removed. Restart Claude Code."; exit 0
 }
 
-if (Test-Path "$Dir\.git") { Say "updating $Dir..."; git -C $Dir pull --ff-only -q }
+# Managed mirror: if a plain ff-only pull fails (dirty/diverged clone), sync hard
+# to origin instead of leaving the install half-done.
+if (Test-Path "$Dir\.git") {
+  Say "updating $Dir..."
+  git -C $Dir pull --ff-only -q 2>$null
+  if ($LASTEXITCODE -ne 0) {
+    Say "fast-forward failed (clone dirty or diverged); resetting to origin..."
+    git -C $Dir fetch -q origin
+    git -C $Dir reset --hard -q '@{u}'
+  }
+}
 else { Say "cloning into $Dir..."; New-Item -ItemType Directory -Force -Path (Split-Path $Dir) | Out-Null; git clone -q $Repo $Dir }
 
 New-Item -ItemType Directory -Force -Path $CmdDst | Out-Null

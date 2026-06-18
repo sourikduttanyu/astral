@@ -20,6 +20,7 @@ def _load(name):
 
 monitor = _load("astral_monitor.py")
 audit = _load("astral_audit.py")
+statusline = _load("astral_statusline.py")
 
 
 def _transcript(rows):
@@ -334,6 +335,32 @@ class TestPerSessionState(unittest.TestCase):
             self.assertNotIn("Model changed", self._run(p, sid="s", env={"ASTRAL_WINDOW": "300000"}))
         finally:
             os.unlink(p)
+
+
+class TestStatusline(unittest.TestCase):
+    def test_prefers_live_context_window(self):
+        # Harness-provided used_percentage wins over any state file.
+        data = {"context_window": {"used_percentage": 8, "context_window_size": 1000000}}
+        self.assertEqual(statusline.pct_from_stdin(data), 8.0)
+
+    def test_null_used_percentage_falls_through(self):
+        # null right after /compact (or pre-first-call) -> no stdin pct, use fallback.
+        self.assertIsNone(statusline.pct_from_stdin({"context_window": {"used_percentage": None}}))
+        self.assertIsNone(statusline.pct_from_stdin({}))  # old Claude Code: no context_window
+
+    def test_state_fallback_reads_per_session_file(self):
+        d = tempfile.mkdtemp()
+        os.makedirs(os.path.join(d, ".astral"))
+        with open(os.path.join(d, ".astral", "state-abc.json"), "w") as f:
+            json.dump({"pct": 42.0}, f)
+        data = {"workspace": {"current_dir": d}, "session_id": "abc"}
+        self.assertEqual(statusline.pct_from_state(data), 42.0)
+
+    def test_color_escalates_with_pct(self):
+        # calm < first band; danger >= last band.
+        self.assertEqual(statusline.color_for(10), statusline.COLORS[0])
+        self.assertEqual(statusline.color_for(95), statusline.COLORS[-1])
+        self.assertGreaterEqual(statusline.color_for(95), 0)
 
 
 class TestReadgate(unittest.TestCase):

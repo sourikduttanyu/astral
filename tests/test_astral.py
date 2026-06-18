@@ -82,6 +82,15 @@ class TestWindowResolve(unittest.TestCase):
         # 399K tokens with no compact proves the window is > 200K -> auto 1M
         self.assertEqual(monitor.resolve_window(399000, self.dir), (1000000, "auto"))
 
+    def test_auto_window_is_sticky_after_compact(self):
+        # Once occupancy proved 1M this session (prior), a /compact that drops
+        # tokens back under 200K must NOT shrink the window back to 200K.
+        self.assertEqual(monitor.resolve_window(40000, self.dir, prior=1000000),
+                         (1000000, "auto"))
+        # No prior -> floor governs as before.
+        self.assertEqual(monitor.resolve_window(40000, self.dir, prior=0),
+                         (200000, "auto"))
+
     def test_user_window_honored_and_floored(self):
         self._set_user_window(200000)
         self.assertEqual(monitor.resolve_window(50000, self.dir), (200000, "user"))

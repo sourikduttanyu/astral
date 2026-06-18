@@ -20,7 +20,10 @@ size. So Astral resolves the window in this precedence:
   2. the user-asserted value in `.astral/window` (set by `/astral:window`), else
   3. 200000 — but raised by the occupancy floor: if current tokens already
      exceed a tier without a compact, the window is provably larger, so it jumps
-     to the next known tier automatically.
+     to the next known tier automatically. This is sticky for the session: a
+     later /compact shrinks the token count but never the window (the window is
+     a model/tier property, not current usage). A real /clear = new session =
+     fresh resolve.
 The model id is still read each prompt: when it CHANGES and the window is
 ambiguous, the hook asks Claude to confirm the new window (`/astral:window`).
 Tune bands with:
@@ -62,10 +65,16 @@ def user_window(cwd):
         return None
 
 
-def resolve_window(tokens, cwd):
+def resolve_window(tokens, cwd, prior=0):
     """(window, source) by precedence: env > .astral/window > 200000 — each
     raised by the occupancy floor so we never claim a window smaller than what
-    the live token count already disproves."""
+    the live token count already disproves.
+
+    In auto mode the window is STICKY: once occupancy has proven a larger tier
+    this session (`prior`), it never drops back down — the window is a property
+    of the model/tier, not of current usage, so a /compact that shrinks tokens
+    must not shrink the window. (A real /clear starts a new session = new state
+    file = no prior, so it resets cleanly.)"""
     env = os.environ.get("ASTRAL_WINDOW")
     if env:
         try:
@@ -75,7 +84,7 @@ def resolve_window(tokens, cwd):
     u = user_window(cwd)
     if u:
         return max(u, floor_window(tokens)), "user"
-    return floor_window(tokens), "auto"
+    return max(floor_window(tokens), prior or 0), "auto"
 
 
 def band(pct):
@@ -145,8 +154,6 @@ def main():
     cwd = data.get("cwd") or os.getcwd()
 
     tokens, model = scan(transcript) if transcript and os.path.exists(transcript) else (0, None)
-    window, source = resolve_window(tokens, cwd)
-    pct = round(tokens / window * 100, 1) if window else 0.0
 
     state_dir = os.path.join(cwd, ".astral")
     state_path = os.path.join(state_dir, state_name(data.get("session_id")))
@@ -156,6 +163,13 @@ def main():
             prev = json.load(f)
     except Exception:
         pass
+
+    # In auto mode keep the window sticky: a prior session window only carries
+    # forward as a floor when it too was auto-resolved (don't let a stale env/
+    # user pin leak after it's unset).
+    prior = prev.get("window", 0) if prev.get("source") == "auto" else 0
+    window, source = resolve_window(tokens, cwd, prior)
+    pct = round(tokens / window * 100, 1) if window else 0.0
     # Re-arm bands when the window changes (e.g. a switch to a smaller window
     # must be able to fire even if a higher band already fired at the larger one).
     last = prev.get("band", 0) if prev.get("window") == window else 0

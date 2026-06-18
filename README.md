@@ -146,11 +146,27 @@ prefer the one-line installer above — it wires the exact interpreter that ran 
 
 | Var | Default | Meaning |
 |---|---|---|
-| `ASTRAL_WINDOW` | `200000` | Token budget the bands are measured against. **Not necessarily your model's full window** — most current models are 1M, but you don't want to ride context to 800K (that's deep in the accuracy-rot zone). Treat this as your *quality* budget: the point past which you'd rather shed work than keep piling on. Raise it if you genuinely want later warnings. |
-| `ASTRAL_BUCKETS` | `50,65,80` | Warn bands, as a percent of `ASTRAL_WINDOW` |
+| `ASTRAL_WINDOW` | *(auto)* | Token budget the bands measure against. **Auto-detected from the current model** in the transcript, re-read every prompt — so switching Opus↔Sonnet↔Haiku mid-session just works. Haiku / unknown → 200K; Opus 4.x, Sonnet 4.6, Fable 5 → 1M. Set this to override (and pin a smaller *quality* budget if you want earlier warnings). |
+| `ASTRAL_BUCKETS` | `40,55,70` | Warn bands, as a percent of the window. Tuned to fire **before accuracy degrades**, not at the cap — see [Why these thresholds](#why-these-thresholds). |
 | `ASTRAL_READ_TOKENS` | `8000` | Est-token threshold (bytes/4) that gates an unbounded read |
 | `ASTRAL_READ_ALLOW` | *(empty)* | Comma-separated globs that bypass the read-gate (matched on full path + basename), e.g. `*/CHANGELOG.md,*.csv` |
 | `ASTRAL_STALE_DAYS` | `60` | `/astral:audit`: days since last use before an agent/skill is "stale" |
+
+### Why these thresholds
+
+The default bands (40 / 55 / 70%) aren't arbitrary — they're set to fire *before*
+long-context accuracy falls off, not when you're about to hit auto-compact:
+
+- A stable comprehension region runs to ~**40%** of the window; past ~**50%** accuracy
+  drops sharply (~45% degradation in one study) — [arxiv 2601.15300](https://arxiv.org/abs/2601.15300).
+- Degradation is **monotonic with length and position-independent** — it shows up within
+  7K–30K tokens on smaller models and the *sheer amount* of context hurts reasoning even
+  with perfect retrieval — [arxiv 2510.05381](https://arxiv.org/abs/2510.05381).
+- "Context rot" replicates across 18 models including Claude 4; frontier models are more
+  robust but still degrade as input grows — [Chroma study (overview)](https://www.understandingai.org/p/context-rot-the-emerging-challenge).
+
+So the first warning lands at the edge of the stable zone (40%), the second past the
+cliff (55%), the third when it's clearly time to shed (70%). Tune via `ASTRAL_BUCKETS`.
 
 ---
 

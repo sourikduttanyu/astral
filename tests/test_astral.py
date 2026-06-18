@@ -59,6 +59,46 @@ class TestMonitorTokens(unittest.TestCase):
         self.assertEqual(monitor.real_tokens("/no/such/file.jsonl"), 0)
 
 
+class TestWindowDetect(unittest.TestCase):
+    def setUp(self):
+        os.environ.pop("ASTRAL_WINDOW", None)
+
+    def test_env_overrides_everything(self):
+        os.environ["ASTRAL_WINDOW"] = "12345"
+        try:
+            self.assertEqual(monitor.window_for("claude-haiku-4-5"), 12345)
+        finally:
+            os.environ.pop("ASTRAL_WINDOW", None)
+
+    def test_haiku_is_200k(self):
+        self.assertEqual(monitor.window_for("claude-haiku-4-5"), 200000)
+
+    def test_frontier_is_1m(self):
+        for m in ("claude-opus-4-8", "claude-sonnet-4-6", "claude-fable-5"):
+            self.assertEqual(monitor.window_for(m), 1000000, m)
+
+    def test_unknown_and_none_fall_back(self):
+        self.assertEqual(monitor.window_for(None), 200000)
+        self.assertEqual(monitor.window_for("<synthetic>"), 200000)
+        self.assertEqual(monitor.window_for("gpt-4o"), 200000)
+
+    def test_scan_reads_latest_model(self):
+        fd, p = tempfile.mkstemp(suffix=".jsonl")
+        with os.fdopen(fd, "w") as f:
+            f.write(json.dumps({"message": {"model": "claude-sonnet-4-6",
+                                            "usage": {"input_tokens": 10}}}) + "\n")
+            # later turn = model switched to opus; synthetic line must not win
+            f.write(json.dumps({"message": {"model": "<synthetic>",
+                                            "usage": {"input_tokens": 5}}}) + "\n")
+            f.write(json.dumps({"message": {"model": "claude-opus-4-8",
+                                            "usage": {"input_tokens": 20}}}) + "\n")
+        tokens, model = monitor.scan(p)
+        self.assertEqual(tokens, 20)
+        self.assertEqual(model, "claude-opus-4-8")
+        self.assertEqual(monitor.window_for(model), 1000000)
+        os.unlink(p)
+
+
 class TestMonitorHook(unittest.TestCase):
     def _run(self, payload, env=None):
         e = dict(os.environ)

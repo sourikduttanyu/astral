@@ -507,6 +507,71 @@ class TestPrecompact(unittest.TestCase):
         return r
 
 
+class TestRecallMCP(unittest.TestCase):
+    SERVER = os.path.join(ROOT, "servers", "astral_recall_mcp.py")
+
+    def _store_with(self, chunks):
+        d = tempfile.mkdtemp()
+        store.Store(os.path.join(d, ".astral", "store")).add(chunks)
+        return d
+
+    def _drive(self, requests, cwd, env=None):
+        """Send newline-delimited JSON-RPC requests, return parsed response lines."""
+        e = dict(os.environ)
+        e["ASTRAL_STORE_DIR"] = os.path.join(cwd, ".astral", "store")
+        e.update(env or {})
+        payload = "\n".join(json.dumps(r) for r in requests) + "\n"
+        r = subprocess.run([sys.executable, self.SERVER], input=payload,
+                           capture_output=True, text=True, env=e)
+        return [json.loads(l) for l in r.stdout.splitlines() if l.strip()]
+
+    def test_initialize_and_serverinfo(self):
+        cwd = self._store_with([{"cid": "a", "source": "s", "text": "hello world"}])
+        resp = self._drive([{"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                             "params": {"protocolVersion": "2025-06-18"}}], cwd)
+        self.assertEqual(resp[0]["id"], 1)
+        self.assertEqual(resp[0]["result"]["serverInfo"]["name"], "astral-recall")
+        self.assertIn("protocolVersion", resp[0]["result"])
+
+    def test_tools_list_exposes_recall(self):
+        cwd = self._store_with([{"cid": "a", "source": "s", "text": "x"}])
+        resp = self._drive([{"jsonrpc": "2.0", "id": 2, "method": "tools/list"}], cwd)
+        tools = resp[0]["result"]["tools"]
+        self.assertEqual(tools[0]["name"], "recall")
+        self.assertIn("query", tools[0]["inputSchema"]["properties"])
+
+    def test_tools_call_returns_indexed_text(self):
+        cwd = self._store_with([
+            {"cid": "a", "source": "snap-1", "text": "the auth token expiry was the bug"},
+            {"cid": "b", "source": "snap-1", "text": "coffee break notes"}])
+        resp = self._drive([{"jsonrpc": "2.0", "id": 3, "method": "tools/call",
+                             "params": {"name": "recall",
+                                        "arguments": {"query": "auth token", "k": 1}}}], cwd)
+        text = resp[0]["result"]["content"][0]["text"]
+        self.assertIn("auth token expiry", text)
+
+    def test_unknown_tool_errors(self):
+        cwd = self._store_with([{"cid": "a", "source": "s", "text": "x"}])
+        resp = self._drive([{"jsonrpc": "2.0", "id": 4, "method": "tools/call",
+                             "params": {"name": "nope", "arguments": {}}}], cwd)
+        self.assertIn("error", resp[0])
+
+    def test_notification_gets_no_response(self):
+        cwd = self._store_with([{"cid": "a", "source": "s", "text": "x"}])
+        # initialized is a notification (no id) -> no output line; ping after it replies.
+        resp = self._drive([{"jsonrpc": "2.0", "method": "notifications/initialized"},
+                            {"jsonrpc": "2.0", "id": 9, "method": "ping"}], cwd)
+        self.assertEqual(len(resp), 1)
+        self.assertEqual(resp[0]["id"], 9)
+
+    def test_recall_miss_is_graceful(self):
+        cwd = self._store_with([{"cid": "a", "source": "s", "text": "nothing relevant"}])
+        resp = self._drive([{"jsonrpc": "2.0", "id": 5, "method": "tools/call",
+                             "params": {"name": "recall",
+                                        "arguments": {"query": "zzz nonexistent qqq"}}}], cwd)
+        self.assertIn("No matching context", resp[0]["result"]["content"][0]["text"])
+
+
 class TestStatusline(unittest.TestCase):
     def test_prefers_live_context_window(self):
         # Harness-provided used_percentage wins over any state file.

@@ -38,6 +38,32 @@ def _transcript(rows):
     return path
 
 
+def _content_transcript(msgs, path=None):
+    """Write a JSONL transcript of (role, text) messages; return its path.
+    Reuses `path` (append) when given, so tests can grow a transcript."""
+    if path is None:
+        fd, path = tempfile.mkstemp(suffix=".jsonl")
+        os.close(fd)
+    with open(path, "a") as f:
+        for i, (role, text) in enumerate(msgs):
+            f.write(json.dumps({
+                "uuid": f"{role}-{text[:8]}-{i}",
+                "type": role,
+                "message": {"role": role, "content": [{"type": "text", "text": text}]},
+            }) + "\n")
+    return path
+
+
+def _run_precompact(transcript, cwd, trigger="auto", env=None):
+    e = dict(os.environ)
+    e.update(env or {})
+    return subprocess.run(
+        [sys.executable, os.path.join(SCRIPTS, "astral_precompact.py")],
+        input=json.dumps({"transcript_path": transcript, "cwd": cwd,
+                          "trigger": trigger, "session_id": "s"}),
+        capture_output=True, text=True, env=e)
+
+
 class TestMonitorTokens(unittest.TestCase):
     def test_latest_turn_wins(self):
         p = _transcript([(10, 100, 0), (20, 5000, 0)])
@@ -405,6 +431,80 @@ class TestStore(unittest.TestCase):
         self.assertEqual(chunks[0]["cid"], "u1")
         self.assertIn("auth.py", chunks[0]["text"])
         self.assertIn("add a test", chunks[1]["text"])
+
+
+class TestPrecompact(unittest.TestCase):
+    TURNS = [("user", "fix the auth token bug"),
+             ("assistant", "patched expiry check in auth.py"),
+             ("user", "now add a regression test"),
+             ("assistant", "added test_token_expiry")]
+
+    def _corpus_count(self, cwd):
+        p = os.path.join(cwd, ".astral", "store", "chunks.jsonl")
+        if not os.path.isfile(p):
+            return 0
+        with open(p) as f:
+            return sum(1 for line in f if line.strip())
+
+    def _watermark(self, cwd):
+        with open(os.path.join(cwd, ".astral", "store", "manifest.json")) as f:
+            return json.load(f)["watermark"]
+
+    def test_snapshots_and_indexes(self):
+        cwd = tempfile.mkdtemp()
+        t = _content_transcript(self.TURNS)
+        try:
+            self._run_ok(t, cwd)
+            sdir = os.path.join(cwd, ".astral", "store")
+            self.assertTrue(any(d.startswith("snap-") for d in os.listdir(sdir)))
+            self.assertEqual(self._corpus_count(cwd), 2)   # 2 turns
+            self.assertEqual(self._watermark(cwd), 4)       # 4 transcript lines
+            hit = store.Store(sdir).search("auth token", k=1)
+            self.assertTrue(hit)
+        finally:
+            os.unlink(t)
+
+    def test_incremental_no_recopy(self):
+        cwd = tempfile.mkdtemp()
+        t = _content_transcript(self.TURNS)
+        try:
+            self._run_ok(t, cwd)
+            self._run_ok(t, cwd)                            # nothing new
+            self.assertEqual(self._corpus_count(cwd), 2)    # not doubled
+        finally:
+            os.unlink(t)
+
+    def test_appends_new_turns(self):
+        cwd = tempfile.mkdtemp()
+        t = _content_transcript(self.TURNS)
+        try:
+            self._run_ok(t, cwd)
+            _content_transcript([("user", "also handle refresh tokens"),
+                                 ("assistant", "done")], path=t)
+            self._run_ok(t, cwd)
+            self.assertEqual(self._corpus_count(cwd), 3)    # +1 new turn
+            self.assertEqual(self._watermark(cwd), 6)
+        finally:
+            os.unlink(t)
+
+    def test_disabled_env_writes_nothing(self):
+        cwd = tempfile.mkdtemp()
+        t = _content_transcript(self.TURNS)
+        try:
+            _run_precompact(t, cwd, env={"ASTRAL_STORE": "0"})
+            self.assertFalse(os.path.isdir(os.path.join(cwd, ".astral", "store")))
+        finally:
+            os.unlink(t)
+
+    def test_missing_transcript_is_safe(self):
+        cwd = tempfile.mkdtemp()
+        r = _run_precompact("/no/such/file.jsonl", cwd)
+        self.assertEqual(r.returncode, 0)
+
+    def _run_ok(self, t, cwd):
+        r = _run_precompact(t, cwd)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return r
 
 
 class TestStatusline(unittest.TestCase):

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "astral",
+  "description": "Context-budget manager for Claude Code: warns before auto-compact and long-context accuracy degradation, checkpoints finished work, gates large reads, and audits unused agents/skills.",
+  "owner": {
+    "name": "sourik",
+    "url": "https://github.com/sourikduttanyu"
+  },
+  "plugins": [
+    {
+      "name": "astral",
+      "description": "Warns before Claude Code auto-compacts (and before long-context accuracy degrades), lets you checkpoint and shed finished work, gates big file reads to subagents, and shows a context badge in the statusline.",
+      "source": "./",
+      "category": "productivity"
+    }
+  ]
+}

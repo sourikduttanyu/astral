@@ -1,7 +1,7 @@
 {
   "name": "astral",
-  "version": "0.1.0",
-  "description": "Context-budget manager for Claude Code. Warns before auto-compact and long-context accuracy degradation, checkpoints finished work so you can shed it, gates large file reads to subagents, guards against unrelated context switches, and audits unused agents/skills.",
+  "version": "0.2.0",
+  "description": "Context-budget manager for Claude Code. Warns before auto-compact and long-context accuracy degradation, checkpoints finished work so you can shed it, gates large file reads to subagents, recalls context evicted by compaction, guards against unrelated context switches, and audits unused agents/skills.",
   "author": {
     "name": "sourik",
     "email": "sourik1999dutta@gmail.com"

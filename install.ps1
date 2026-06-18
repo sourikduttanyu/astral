@@ -50,6 +50,7 @@ Say "commands -> $CmdDst (/astral:checkpoint, /astral:status)"
 & $PY - $Settings "$Dir\scripts" @'
 import json,sys,os
 settings, scripts = sys.argv[1], sys.argv[2]
+py   = sys.executable or "python"   # wire the exact interpreter that ran install
 mon  = os.path.join(scripts,"astral_monitor.py")
 gate = os.path.join(scripts,"astral_readgate.py")
 try: s=json.load(open(settings))
@@ -61,8 +62,8 @@ def strip(evt):
         hs=[x for x in e.get("hooks",[]) if "astral_" not in x.get("command","")]
         if hs: e["hooks"]=hs; out.append(e)
     return out
-ups=strip("UserPromptSubmit"); ups.append({"hooks":[{"type":"command","command":f'python "{mon}"'}]})
-pre=strip("PreToolUse");       pre.append({"matcher":"Read","hooks":[{"type":"command","command":f'python "{gate}"'}]})
+ups=strip("UserPromptSubmit"); ups.append({"hooks":[{"type":"command","command":f'"{py}" "{mon}"'}]})
+pre=strip("PreToolUse");       pre.append({"matcher":"Read","hooks":[{"type":"command","command":f'"{py}" "{gate}"'}]})
 h["UserPromptSubmit"]=ups; h["PreToolUse"]=pre; s["hooks"]=h
 os.makedirs(os.path.dirname(settings),exist_ok=True)
 json.dump(s,open(settings,"w"),indent=2)

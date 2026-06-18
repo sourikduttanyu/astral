@@ -60,6 +60,7 @@ say "commands -> $CMDDST (/astral:checkpoint, /astral:status)"
 python3 - "$SETTINGS" "$DIR/scripts" <<'PY'
 import json,sys,os
 settings, scripts = sys.argv[1], sys.argv[2]
+py   = sys.executable or "python3"   # wire the exact interpreter that ran install
 mon  = os.path.join(scripts,"astral_monitor.py")
 gate = os.path.join(scripts,"astral_readgate.py")
 try:
@@ -74,9 +75,9 @@ def strip(evt):
         if hs: e["hooks"]=hs; out.append(e)
     return out
 ups=strip("UserPromptSubmit")
-ups.append({"hooks":[{"type":"command","command":f'python3 "{mon}"'}]})
+ups.append({"hooks":[{"type":"command","command":f'"{py}" "{mon}"'}]})
 pre=strip("PreToolUse")
-pre.append({"matcher":"Read","hooks":[{"type":"command","command":f'python3 "{gate}"'}]})
+pre.append({"matcher":"Read","hooks":[{"type":"command","command":f'"{py}" "{gate}"'}]})
 h["UserPromptSubmit"]=ups
 h["PreToolUse"]=pre
 s["hooks"]=h

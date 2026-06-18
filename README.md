@@ -14,9 +14,10 @@ everything.
 |---|---|---|
 | **Watcher** | every prompt | Estimates context usage from the transcript. When it crosses a band (50% / 65% / 80% by default), tells you what work is **done** and offers `/astral:checkpoint` — *before* autocompact, not after. |
 | **Checkpoint** | `/astral:checkpoint` | Lists completed work-units, lets you **pick which to shed** (multi-select), writes a resume-ready summary to `.astral/checkpoint-<ts>.md`, then hands you a **steered `/compact` line** that drops the done work but keeps the live thread. |
-| **Read-gate (Courier)** | before any `Read` | If the target file is large (>1500 lines) and unbounded, blocks the read and has Claude offer you **subagent options** (Explore / general-purpose) so a big dump never lands in your main context. |
+| **Read-gate (Courier)** | before any `Read` | If the target file is large (>~8000 est. tokens) and unbounded, **asks** before the read and has Claude offer you **subagent options** (Explore / general-purpose) so a big dump never lands in your main context. Allow it to read directly, or it delegates. |
 | **Switch-guard** | every prompt | If your prompt starts work unrelated to the current session, Claude suggests `/clear` first; if you decline, it offers a checkpoint of what's droppable. |
 | **Status** | `/astral:status` | Shows current context level + completed vs in-flight work. |
+| **Audit (Sanity's Eclipse)** | `/astral:audit` | Scans every installed agent/skill against real usage in your transcripts. Flags the ones **never used** or **stale** (>60d) — the dead weight that loads into *every* session — and hands you reversible `mv … .disabled/` commands to prune them. Reports tokens reclaimed. |
 
 ## Honest limits
 
@@ -27,8 +28,10 @@ everything.
   "pick what to compact" UX is "pick what completed work to shed."
 - **Compaction is always user-triggered.** Hooks and Claude cannot run slash
   commands; Astral prompts and steers, you run `/compact` (or `/clear`).
-- **Token count is an estimate** (transcript bytes ÷ 4), biased to warn early.
-  It is not the model's exact accounting. Tune the window/bands if it's off.
+- **Token count is read from the transcript's latest `usage`** (input + cache_read
+  + cache_creation) — the model's real accounting, the same the bench uses. It
+  tracks reality and drops after a `/compact`. The one assumption is `ASTRAL_WINDOW`
+  (the context limit it's measured against); set it to your model's window.
 - Hooks can't render menus or spawn subagents themselves — they *instruct Claude*
   to, and Claude drives the `AskUserQuestion` picker and the subagent dispatch.
 
@@ -59,7 +62,10 @@ Then type **`/astral:help`** to get started. Warnings fire on their own.
 
 Prefer the plugin loader? Clone anywhere and reference it; the repo is also a valid
 Claude Code plugin (`.claude-plugin/plugin.json` + `hooks/hooks.json`, paths use
-`${CLAUDE_PLUGIN_ROOT}`).
+`${CLAUDE_PLUGIN_ROOT}`). Note: `hooks.json` invokes `python3` (can't self-detect
+the interpreter the way the installer does). On Windows, where the binary is
+usually `python`, prefer the one-line installer above — it wires the exact
+interpreter that ran it.
 
 ## Config (env vars)
 
@@ -67,7 +73,8 @@ Claude Code plugin (`.claude-plugin/plugin.json` + `hooks/hooks.json`, paths use
 |---|---|---|
 | `ASTRAL_WINDOW` | `200000` | Assumed context window, tokens |
 | `ASTRAL_BUCKETS` | `50,65,80` | Warn bands (percent) |
-| `ASTRAL_READ_LINES` | `1500` | Line threshold for read delegation |
+| `ASTRAL_READ_TOKENS` | `8000` | Est-token threshold (bytes/4) that gates an unbounded read |
+| `ASTRAL_STALE_DAYS` | `60` | `/astral:audit`: days since last use before an agent/skill is "stale" |
 
 ## Layout
 
@@ -77,8 +84,10 @@ astral/
   hooks/hooks.json             hook wiring
   scripts/astral_monitor.py    watcher + switch-guard (UserPromptSubmit)
   scripts/astral_readgate.py   large-read delegation (PreToolUse: Read)
+  scripts/astral_audit.py      unused-agent/skill auditor (/astral:audit)
   commands/checkpoint.md       /astral:checkpoint
   commands/status.md           /astral:status
+  commands/audit.md            /astral:audit
 ```
 
 State lives in `.astral/` inside whatever project you run Claude in (gitignore it).

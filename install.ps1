@@ -45,7 +45,7 @@ else { Say "cloning into $Dir..."; New-Item -ItemType Directory -Force -Path (Sp
 
 New-Item -ItemType Directory -Force -Path $CmdDst | Out-Null
 Copy-Item "$Dir\commands\*.md" $CmdDst -Force
-Say "commands -> $CmdDst (/astral:checkpoint, /astral:status)"
+Say "commands -> $CmdDst (/astral:checkpoint, /astral:status, /astral:audit, /astral:help)"
 
 & $PY - $Settings "$Dir\scripts" @'
 import json,sys,os

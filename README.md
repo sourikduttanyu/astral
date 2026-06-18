@@ -1,39 +1,100 @@
 # Astral
 
-A context-budget manager for Claude Code. Named for Outworld Destroyer's
-**Astral Imprison** — banish context, recall it later.
+**A context-budget manager for Claude Code.**
 
-Context window = your **mana pool**. Autocompact = running out of mana mid-fight.
-Astral's job: **never let you hit autocompact**, and when you're getting close,
-shed work that's already done instead of letting Claude blindly summarize
-everything.
+> Spend your context like mana — don't get caught empty mid-fight.
+
+Claude Code only remembers so much at once (~200k tokens). When that fills up, it
+auto-compacts: it silently crams your whole session into a summary on its own —
+no warning, no say in what gets cut — and usually drops something you needed
+right when you needed it.
+
+Astral's job: **tell you before that happens, and let you choose what to drop**
+instead of letting Claude blindly flatten everything.
+
+Think of your context window as a mana pool. Auto-compact is running dry mid-fight.
+Astral watches the meter and helps you spend deliberately. (That's where the analogy
+ends — nothing below depends on it.)
+
+---
 
 ## What it does
 
+Five pieces, each a concrete outcome:
+
+- **No surprise wipes.** A *Watcher* checks your context on every prompt and warns
+  you at 50% / 65% / 80% full — while you can still act, not after Claude already
+  compacted.
+- **Drop finished work, keep the live thread.** At a *Checkpoint*, you multi-select
+  the work that's already done. Astral writes a resume-ready note and hands you a
+  `/compact` line steered to shed that work — instead of flattening the whole
+  conversation.
+- **Big file reads don't eat your memory.** Before a large `Read`, a *Read-gate*
+  offers to hand the file to a subagent, so a 10k-token dump stays out of your main
+  session.
+- **Get nudged to start clean.** A *Switch-guard* notices when your new prompt is
+  unrelated to the current session and suggests `/clear` first.
+- **Stop paying rent on dead tooling.** An *Audit* scans your installed agents and
+  skills against real usage, flags the never-used or stale ones that load every
+  session, and gives you reversible commands to prune them.
+
+Plus `/astral:status` to see your current level and what's done at any time.
+
 | Piece | Trigger | Behavior |
 |---|---|---|
-| **Watcher** | every prompt | Estimates context usage from the transcript. When it crosses a band (50% / 65% / 80% by default), tells you what work is **done** and offers `/astral:checkpoint` — *before* autocompact, not after. |
+| **Watcher** | every prompt (`UserPromptSubmit`) | Estimates context usage from the transcript. Crossing a band (50% / 65% / 80% by default) tells you what work is **done** and offers `/astral:checkpoint` — *before* auto-compact. |
 | **Checkpoint** | `/astral:checkpoint` | Lists completed work-units, lets you **pick which to shed** (multi-select), writes a resume-ready summary to `.astral/checkpoint-<ts>.md`, then hands you a **steered `/compact` line** that drops the done work but keeps the live thread. |
-| **Read-gate (Courier)** | before any `Read` | If the target file is large (>~8000 est. tokens) and unbounded, **asks** before the read and has Claude offer you **subagent options** (Explore / general-purpose) so a big dump never lands in your main context. Allow it to read directly, or it delegates. |
-| **Switch-guard** | every prompt | If your prompt starts work unrelated to the current session, Claude suggests `/clear` first; if you decline, it offers a checkpoint of what's droppable. |
+| **Read-gate ("Courier")** | before any `Read` (`PreToolUse: Read`) | If the target file is large (>~8000 est. tokens) and unbounded, **asks** before reading and offers **subagent options** (Explore / general-purpose) so a big dump never lands in your main context. Allow the direct read, or it delegates. |
+| **Switch-guard** | every prompt | If your prompt starts work unrelated to the current session, suggests `/clear` first; if you decline, offers a checkpoint of what's droppable. |
 | **Status** | `/astral:status` | Shows current context level + completed vs in-flight work. |
-| **Audit (Sanity's Eclipse)** | `/astral:audit` | Scans every installed agent/skill against real usage in your transcripts. Flags the ones **never used** or **stale** (>60d) — the dead weight that loads into *every* session — and hands you reversible `mv … .disabled/` commands to prune them. Reports tokens reclaimed. |
+| **Audit ("Sanity's Eclipse")** | `/astral:audit` | Scans every installed agent/skill against real usage in your transcripts. Flags ones **never used** or **stale** (>60d) — dead weight loaded into *every* session — and hands you reversible `mv … .disabled/` commands. Reports tokens reclaimed. |
+
+---
+
+## How it works
+
+*(Mechanics for the curious. Skip to [Install](#install) if you just want it running.)*
+
+**Token accounting is real, not guessed for the meter.** The context count is read
+from the transcript's latest `usage` field — `input + cache_read + cache_creation`,
+the model's own accounting (the same numbers the bench uses). It tracks reality and
+drops after a `/compact`. The one assumption is `ASTRAL_WINDOW`, the context limit it
+measures against — set it to your model's window.
+
+**Checkpoint is a durable-`.md` + steered-`/compact` hybrid.** Claude Code has no
+native way to compact one region and keep another, so Astral does two things at once:
+writes your done work to a durable `.astral/checkpoint-<ts>.md` file *and* generates a
+`/compact Keep:… Drop:…` line whose instruction text steers what the compaction sheds.
+The durable file is your safety net; the steered line shapes the in-context result.
+
+**Read delegation keeps large dumps out of the main session.** The read-gate measures
+a file by `bytes / 4`. Over the `ASTRAL_READ_TOKENS` threshold and unbounded, it routes
+the read to a subagent (Explore or general-purpose) that reads and summarizes in its own
+context, so your main window only receives the summary.
+
+**Hooks instruct; Claude acts.** Astral ships two hooks — `astral_monitor.py`
+(`UserPromptSubmit`: Watcher + Switch-guard) and `astral_readgate.py`
+(`PreToolUse: Read`). Hooks can't render menus or spawn subagents themselves; they
+*instruct Claude*, and Claude drives the `AskUserQuestion` picker and subagent dispatch.
+
+---
 
 ## Honest limits
 
-- **No native selective/verbatim compaction exists in Claude Code.** Astral can't
-  compact one region and keep another. The only real selectivity is `/compact`'s
-  instruction text. `/astral:checkpoint` uses a **hybrid** flow: write done-work
-  to a durable `.md` *and* generate a steered `/compact Keep:… Drop:…` line. The
-  "pick what to compact" UX is "pick what completed work to shed."
-- **Compaction is always user-triggered.** Hooks and Claude cannot run slash
-  commands; Astral prompts and steers, you run `/compact` (or `/clear`).
-- **Token count is read from the transcript's latest `usage`** (input + cache_read
-  + cache_creation) — the model's real accounting, the same the bench uses. It
-  tracks reality and drops after a `/compact`. The one assumption is `ASTRAL_WINDOW`
-  (the context limit it's measured against); set it to your model's window.
-- Hooks can't render menus or spawn subagents themselves — they *instruct Claude*
-  to, and Claude drives the `AskUserQuestion` picker and the subagent dispatch.
+Read this before you trust it. Nothing here is magic, and nothing happens without you.
+
+- **There is no native selective compaction in Claude Code, and Astral doesn't claim
+  to add one.** The only real selectivity is the instruction text in `/compact`. The
+  "pick what to compact" UX is really "pick what completed work to shed," delivered via
+  the durable-`.md` + steered-`/compact` hybrid above.
+- **Compaction is always user-triggered.** Hooks and Claude can't run slash commands.
+  Astral prompts and steers; **you** press the button (`/compact` or `/clear`).
+- **The Watcher estimates against `ASTRAL_WINDOW`.** The token count itself is the
+  model's real `usage`, but the *percentage* depends on the window you configure. Set
+  it correctly for your model or the bands will be off.
+- **Hooks can't render UI or spawn subagents.** They instruct Claude to; Claude does it.
+
+---
 
 ## Install
 
@@ -49,29 +110,29 @@ curl -fsSL https://raw.githubusercontent.com/sourikduttanyu/astral/master/instal
 irm https://raw.githubusercontent.com/sourikduttanyu/astral/master/install.ps1 | iex
 ```
 
-~10 seconds. Needs `python3` + `git` (both preinstalled on macOS/Linux). It clones
-to `~/.claude/astral`, drops the commands into `~/.claude/commands/astral/`, and
-merges the two hooks into `~/.claude/settings.json` (your other settings/hooks are
-preserved). **Restart Claude Code** (or run `/hooks`) after install.
+Takes ~10 seconds. Needs `python3` + `git` (both preinstalled on macOS/Linux). It clones
+to `~/.claude/astral`, drops the commands into `~/.claude/commands/astral/`, and merges
+the two hooks into `~/.claude/settings.json` (your other settings/hooks are preserved).
+**Restart Claude Code** (or run `/hooks`) afterward.
 
 Then type **`/astral:help`** to get started. Warnings fire on their own.
 
-**Update:** re-run the same one-line install command. It `git pull`s the clone,
-re-copies commands, and re-merges hooks — so fixes actually reach your live setup.
-(The hooks run from the clone; commands are copied, so a bare `git pull` updates
-scripts but not commands — re-running the installer is the reliable path.) Restart
-Claude Code afterward.
+**Update:** re-run the same one-line install command. It `git pull`s the clone, re-copies
+commands, and re-merges hooks — so fixes actually reach your live setup. (The hooks run
+from the clone; commands are copied, so a bare `git pull` updates scripts but not
+commands — re-running the installer is the reliable path.) Restart Claude Code afterward.
 
 **Uninstall:** `ASTRAL_UNINSTALL=1 bash install.sh` (or `$env:ASTRAL_UNINSTALL=1` on Windows).
 
 ### Manual / as a plugin
 
-Prefer the plugin loader? Clone anywhere and reference it; the repo is also a valid
-Claude Code plugin (`.claude-plugin/plugin.json` + `hooks/hooks.json`, paths use
-`${CLAUDE_PLUGIN_ROOT}`). Note: `hooks.json` invokes `python3` (can't self-detect
-the interpreter the way the installer does). On Windows, where the binary is
-usually `python`, prefer the one-line installer above — it wires the exact
-interpreter that ran it.
+Prefer the plugin loader? Clone anywhere and reference it; the repo is also a valid Claude
+Code plugin (`.claude-plugin/plugin.json` + `hooks/hooks.json`, paths use
+`${CLAUDE_PLUGIN_ROOT}`). Note: `hooks.json` invokes `python3` (can't self-detect the
+interpreter the way the installer does). On Windows, where the binary is usually `python`,
+prefer the one-line installer above — it wires the exact interpreter that ran it.
+
+---
 
 ## Config (env vars)
 
@@ -82,6 +143,8 @@ interpreter that ran it.
 | `ASTRAL_READ_TOKENS` | `8000` | Est-token threshold (bytes/4) that gates an unbounded read |
 | `ASTRAL_READ_ALLOW` | *(empty)* | Comma-separated globs that bypass the read-gate (matched on full path + basename), e.g. `*/CHANGELOG.md,*.csv` |
 | `ASTRAL_STALE_DAYS` | `60` | `/astral:audit`: days since last use before an agent/skill is "stale" |
+
+---
 
 ## Layout
 
@@ -95,22 +158,21 @@ astral/
   commands/checkpoint.md       /astral:checkpoint
   commands/status.md           /astral:status
   commands/audit.md            /astral:audit
+  commands/help.md             /astral:help
 ```
 
 State lives in `.astral/` inside whatever project you run Claude in (gitignore it).
 
+---
+
 ## Benchmark
 
-Does it actually help? A/B it. `bench/astral_bench.py` parses a Claude Code
-transcript into real context metrics (autocompacts, peak context, tokens/task).
-Run the same task with Astral off vs on, then:
+Does it actually help? A/B it. `bench/astral_bench.py` parses a Claude Code transcript
+into real context metrics (autocompacts, peak context, tokens/task). Run the same task
+with Astral off vs on, then:
 
 ```bash
 python3 bench/astral_bench.py --compare off.jsonl on.jsonl --labels off,on
 ```
 
 See [`bench/README.md`](bench/README.md) for method (arms, 3+ runs, caveats).
-
-## License
-
-MIT

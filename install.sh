@@ -54,7 +54,7 @@ chmod +x "$DIR"/scripts/*.py 2>/dev/null || true
 # ---- install commands ----
 mkdir -p "$CMDDST"
 cp "$DIR"/commands/*.md "$CMDDST"/
-say "commands -> $CMDDST (/astral:checkpoint, /astral:status)"
+say "commands -> $CMDDST (/astral:checkpoint, /astral:status, /astral:audit, /astral:help)"
 
 # ---- merge hooks into settings.json ----
 python3 - "$SETTINGS" "$DIR/scripts" <<'PY'

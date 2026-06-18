@@ -13,5 +13,5 @@ Show the user this quick reference (keep it short):
 - Large reads auto-suggest a subagent (keeps context lean).
 - Starting unrelated work → Astral suggests `/clear` first.
 
-Tune via env: `ASTRAL_WINDOW`, `ASTRAL_BUCKETS`, `ASTRAL_READ_LINES`.
+Tune via env: `ASTRAL_WINDOW`, `ASTRAL_BUCKETS`, `ASTRAL_READ_TOKENS`.
 Repo: https://github.com/sourikduttanyu/astral

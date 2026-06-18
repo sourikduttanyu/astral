@@ -1,4 +1,4 @@
-# Astral installer — Windows (PowerShell 5.1+)
+# Astral installer - Windows (PowerShell 5.1+)
 # One line:
 #   irm https://raw.githubusercontent.com/sourikduttanyu/astral/master/install.ps1 | iex
 # Safe to re-run. Uninstall: $env:ASTRAL_UNINSTALL=1; irm ... | iex
@@ -19,7 +19,7 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) { Die "git required." 
 $PY = $py.Source
 
 if ($env:ASTRAL_UNINSTALL -eq "1") {
-  Say "uninstalling…"
+  Say "uninstalling..."
   if (Test-Path $CmdDst) { Remove-Item -Recurse -Force $CmdDst }
   & $PY - $Settings @'
 import json,sys,os
@@ -40,12 +40,12 @@ json.dump(s,open(p,"w"),indent=2)
   Say "removed. Restart Claude Code."; exit 0
 }
 
-if (Test-Path "$Dir\.git") { Say "updating $Dir…"; git -C $Dir pull --ff-only -q }
-else { Say "cloning into $Dir…"; New-Item -ItemType Directory -Force -Path (Split-Path $Dir) | Out-Null; git clone -q $Repo $Dir }
+if (Test-Path "$Dir\.git") { Say "updating $Dir..."; git -C $Dir pull --ff-only -q }
+else { Say "cloning into $Dir..."; New-Item -ItemType Directory -Force -Path (Split-Path $Dir) | Out-Null; git clone -q $Repo $Dir }
 
 New-Item -ItemType Directory -Force -Path $CmdDst | Out-Null
 Copy-Item "$Dir\commands\*.md" $CmdDst -Force
-Say "commands → $CmdDst (/astral:checkpoint, /astral:status)"
+Say "commands -> $CmdDst (/astral:checkpoint, /astral:status)"
 
 & $PY - $Settings "$Dir\scripts" @'
 import json,sys,os

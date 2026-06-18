@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Astral installer — macOS / Linux / WSL / Git Bash
+# Astral installer - macOS / Linux / WSL / Git Bash
 # One line:
 #   curl -fsSL https://raw.githubusercontent.com/sourikduttanyu/astral/master/install.sh | bash
 # Safe to re-run (idempotent). Uninstall: ASTRAL_UNINSTALL=1 bash install.sh
@@ -19,7 +19,7 @@ command -v git     >/dev/null 2>&1 || die "git required."
 
 # ---- uninstall ----
 if [ "${ASTRAL_UNINSTALL:-0}" = "1" ]; then
-  say "uninstalling…"
+  say "uninstalling..."
   rm -rf "$CMDDST"
   python3 - "$SETTINGS" <<'PY'
 import json,sys,os
@@ -45,16 +45,16 @@ fi
 
 # ---- fetch / update repo ----
 if [ -d "$DIR/.git" ]; then
-  say "updating $DIR…"; git -C "$DIR" pull --ff-only -q || die "git pull failed."
+  say "updating $DIR..."; git -C "$DIR" pull --ff-only -q || die "git pull failed."
 else
-  say "cloning into $DIR…"; mkdir -p "$(dirname "$DIR")"; git clone -q "$REPO" "$DIR"
+  say "cloning into $DIR..."; mkdir -p "$(dirname "$DIR")"; git clone -q "$REPO" "$DIR"
 fi
 chmod +x "$DIR"/scripts/*.py 2>/dev/null || true
 
 # ---- install commands ----
 mkdir -p "$CMDDST"
 cp "$DIR"/commands/*.md "$CMDDST"/
-say "commands → $CMDDST (/astral:checkpoint, /astral:status)"
+say "commands -> $CMDDST (/astral:checkpoint, /astral:status)"
 
 # ---- merge hooks into settings.json ----
 python3 - "$SETTINGS" "$DIR/scripts" <<'PY'
@@ -86,4 +86,4 @@ print("[astral] hooks merged into",settings)
 PY
 
 say "done. Restart Claude Code (or run /hooks to reload)."
-say "warns before autocompact · /astral:checkpoint to shed done work · /astral:status for level"
+say "warns before autocompact - /astral:checkpoint to shed done work - /astral:status for level"

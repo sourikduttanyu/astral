@@ -3,6 +3,7 @@
 [![GitHub stars](https://img.shields.io/github/stars/sourikduttanyu/astral?style=flat&logo=github)](https://github.com/sourikduttanyu/astral/stargazers)
 [![Last commit](https://img.shields.io/github/last-commit/sourikduttanyu/astral)](https://github.com/sourikduttanyu/astral/commits/master)
 [![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-d77757)](https://github.com/sourikduttanyu/astral)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 **A context-budget manager for Claude Code.** Astral watches how full your context
 window is, warns you before auto-compact silently rewrites your session, and helps

@@ -6,5 +6,8 @@
     "name": "sourik",
     "email": "sourik1999dutta@gmail.com"
   },
+  "homepage": "https://github.com/sourikduttanyu/astral",
+  "repository": "https://github.com/sourikduttanyu/astral",
+  "license": "MIT",
   "hooks": "./hooks/hooks.json"
 }

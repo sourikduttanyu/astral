@@ -83,6 +83,18 @@ astral/
 
 State lives in `.astral/` inside whatever project you run Claude in (gitignore it).
 
+## Benchmark
+
+Does it actually help? A/B it. `bench/astral_bench.py` parses a Claude Code
+transcript into real context metrics (autocompacts, peak context, tokens/task).
+Run the same task with Astral off vs on, then:
+
+```bash
+python3 bench/astral_bench.py --compare off.jsonl on.jsonl --labels off,on
+```
+
+See [`bench/README.md`](bench/README.md) for method (arms, 3+ runs, caveats).
+
 ## License
 
 MIT

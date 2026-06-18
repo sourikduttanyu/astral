@@ -10,10 +10,20 @@ Two jobs:
 Context size is read from the transcript's most recent turn `usage` block
 (input_tokens + cache_read + cache_creation) - the same real accounting the
 bench uses, NOT a bytes proxy. So it tracks reality: after a /compact the
-number drops and warnings re-arm correctly. The context window is auto-detected from the current model in the transcript
-(re-read every prompt, so mid-session model switches are tracked). Tune with:
-  ASTRAL_WINDOW   override the detected window, in tokens (else: Haiku/unknown
-                  200000, Opus 4.x / Sonnet 4.6 / Fable 5 1000000)
+number drops and warnings re-arm correctly.
+
+The context WINDOW can't be read from a hook — the harness/tier/subscription
+sets it (Claude Code gives Sonnet 4.6 a 200K window but Opus 4.8 a 1M one for
+the same session; Cursor lets users pick), and a model id alone doesn't imply a
+size. So Astral resolves the window in this precedence:
+  1. ASTRAL_WINDOW env (hard pin), else
+  2. the user-asserted value in `.astral/window` (set by `/astral:window`), else
+  3. 200000 — but raised by the occupancy floor: if current tokens already
+     exceed a tier without a compact, the window is provably larger, so it jumps
+     to the next known tier automatically.
+The model id is still read each prompt: when it CHANGES and the window is
+ambiguous, the hook asks Claude to confirm the new window (`/astral:window`).
+Tune bands with:
   ASTRAL_BUCKETS  warn bands, comma list of percents (default 40,55,70 -
                   set to fire before accuracy degrades, not at the cap)
 """
@@ -28,34 +38,44 @@ import sys, os, json
 BUCKETS = sorted(int(x) for x in os.environ.get("ASTRAL_BUCKETS", "40,55,70").split(","))
 TAIL_BYTES = 512 * 1024
 
-# Detected context windows by model family. ASTRAL_WINDOW overrides everything;
-# otherwise we read the current model from the transcript and map it. Unknown /
-# synthetic / older models fall back to 200000 (conservative -> warns earlier).
-_WINDOWS_1M = ("opus-4-5", "opus-4-6", "opus-4-7", "opus-4-8",
-               "sonnet-4-6", "fable-5", "mythos-5")
+# Known context-window tiers, smallest first. The occupancy floor snaps the
+# window up to the smallest tier that current usage proves it must be.
+TIERS = (200000, 1000000)
 
 
-def window_for(model):
-    """Token budget the bands are measured against, for the current model.
+def floor_window(tokens):
+    """Smallest known tier that can hold `tokens`. Past 200K with no compact
+    means the window is really 1M; past 1M means a custom/huge window."""
+    for t in TIERS:
+        if tokens <= t:
+            return t
+    return tokens
 
-    ASTRAL_WINDOW wins if set. Else map the detected model id; Haiku and unknown
-    models -> 200000. Re-evaluated every prompt, so mid-session model switches
-    (Opus<->Sonnet<->Haiku) are tracked automatically.
-    """
+
+def user_window(cwd):
+    """User-asserted window from `.astral/window` (set by /astral:window), or None."""
+    try:
+        with open(os.path.join(cwd, ".astral", "window")) as f:
+            v = int(f.read().strip())
+        return v if v > 0 else None
+    except Exception:
+        return None
+
+
+def resolve_window(tokens, cwd):
+    """(window, source) by precedence: env > .astral/window > 200000 — each
+    raised by the occupancy floor so we never claim a window smaller than what
+    the live token count already disproves."""
     env = os.environ.get("ASTRAL_WINDOW")
     if env:
         try:
-            return int(env)
+            return max(int(env), 1), "env"
         except ValueError:
             pass
-    if not model:
-        return 200000
-    m = model.lower()
-    if "haiku" in m:
-        return 200000
-    if any(tag in m for tag in _WINDOWS_1M):
-        return 1000000
-    return 200000
+    u = user_window(cwd)
+    if u:
+        return max(u, floor_window(tokens)), "user"
+    return floor_window(tokens), "auto"
 
 
 def band(pct):
@@ -118,24 +138,27 @@ def main():
     cwd = data.get("cwd") or os.getcwd()
 
     tokens, model = scan(transcript) if transcript and os.path.exists(transcript) else (0, None)
-    window = window_for(model)
+    window, source = resolve_window(tokens, cwd)
     pct = round(tokens / window * 100, 1) if window else 0.0
 
     state_dir = os.path.join(cwd, ".astral")
     state_path = os.path.join(state_dir, "state.json")
-    last = 0
+    prev = {}
     try:
         with open(state_path) as f:
-            last = json.load(f).get("band", 0)
+            prev = json.load(f)
     except Exception:
         pass
+    # Re-arm bands when the window changes (e.g. a switch to a smaller window
+    # must be able to fire even if a higher band already fired at the larger one).
+    last = prev.get("band", 0) if prev.get("window") == window else 0
 
     cur = band(pct)
     try:
         os.makedirs(state_dir, exist_ok=True)
         with open(state_path, "w") as f:
             json.dump({"tokens": tokens, "pct": pct, "window": window,
-                       "model": model, "band": cur}, f)
+                       "model": model, "source": source, "band": cur}, f)
     except OSError:
         pass
 
@@ -145,6 +168,18 @@ def main():
         "summarize and shed completed work before continuing."
     )
     out = guard
+
+    # Model changed and the window is genuinely ambiguous (occupancy hasn't
+    # proven a tier, and the user hasn't pinned it) -> ask which window applies.
+    model_changed = bool(model and prev.get("model") and model != prev.get("model"))
+    if model_changed and source != "env" and tokens <= TIERS[0]:
+        out += (
+            f"\n[Astral] Model changed ({prev.get('model')} -> {model}). Its context "
+            f"window depends on your tier/subscription (e.g. 200K or 1M), which Astral "
+            "can't read. Ask the user via AskUserQuestion which window applies "
+            "(200K / 1M / keep current), then run `/astral:window <200000|1000000>` so "
+            "the bands and badge match. Do this before continuing."
+        )
     if cur > last and cur > 0:
         out += (
             f"\n[Astral] Context ~{pct}% (~{tokens} tok / {window}). "

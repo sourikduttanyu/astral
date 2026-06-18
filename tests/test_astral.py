@@ -59,28 +59,42 @@ class TestMonitorTokens(unittest.TestCase):
         self.assertEqual(monitor.real_tokens("/no/such/file.jsonl"), 0)
 
 
-class TestWindowDetect(unittest.TestCase):
+class TestWindowResolve(unittest.TestCase):
     def setUp(self):
         os.environ.pop("ASTRAL_WINDOW", None)
+        self.dir = tempfile.mkdtemp()
+        os.makedirs(os.path.join(self.dir, ".astral"))
 
-    def test_env_overrides_everything(self):
-        os.environ["ASTRAL_WINDOW"] = "12345"
+    def _set_user_window(self, v):
+        with open(os.path.join(self.dir, ".astral", "window"), "w") as f:
+            f.write(str(v))
+
+    def test_floor_snaps_to_tier(self):
+        self.assertEqual(monitor.floor_window(0), 200000)
+        self.assertEqual(monitor.floor_window(199999), 200000)
+        self.assertEqual(monitor.floor_window(200001), 1000000)   # past 200K -> 1M
+        self.assertEqual(monitor.floor_window(2_000_000), 2_000_000)  # custom/huge
+
+    def test_default_is_200k(self):
+        self.assertEqual(monitor.resolve_window(50000, self.dir), (200000, "auto"))
+
+    def test_occupancy_floor_lifts_to_1m(self):
+        # 399K tokens with no compact proves the window is > 200K -> auto 1M
+        self.assertEqual(monitor.resolve_window(399000, self.dir), (1000000, "auto"))
+
+    def test_user_window_honored_and_floored(self):
+        self._set_user_window(200000)
+        self.assertEqual(monitor.resolve_window(50000, self.dir), (200000, "user"))
+        # but live tokens can't be below the asserted window if they exceed it
+        self.assertEqual(monitor.resolve_window(399000, self.dir), (1000000, "user"))
+
+    def test_env_pins_exactly(self):
+        os.environ["ASTRAL_WINDOW"] = "300000"
+        self._set_user_window(1000000)
         try:
-            self.assertEqual(monitor.window_for("claude-haiku-4-5"), 12345)
+            self.assertEqual(monitor.resolve_window(50000, self.dir), (300000, "env"))
         finally:
             os.environ.pop("ASTRAL_WINDOW", None)
-
-    def test_haiku_is_200k(self):
-        self.assertEqual(monitor.window_for("claude-haiku-4-5"), 200000)
-
-    def test_frontier_is_1m(self):
-        for m in ("claude-opus-4-8", "claude-sonnet-4-6", "claude-fable-5"):
-            self.assertEqual(monitor.window_for(m), 1000000, m)
-
-    def test_unknown_and_none_fall_back(self):
-        self.assertEqual(monitor.window_for(None), 200000)
-        self.assertEqual(monitor.window_for("<synthetic>"), 200000)
-        self.assertEqual(monitor.window_for("gpt-4o"), 200000)
 
     def test_scan_reads_latest_model(self):
         fd, p = tempfile.mkstemp(suffix=".jsonl")
@@ -95,7 +109,6 @@ class TestWindowDetect(unittest.TestCase):
         tokens, model = monitor.scan(p)
         self.assertEqual(tokens, 20)
         self.assertEqual(model, "claude-opus-4-8")
-        self.assertEqual(monitor.window_for(model), 1000000)
         os.unlink(p)
 
 

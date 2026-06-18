@@ -4,16 +4,24 @@
 
 > Spend your context like mana — don't get caught empty mid-fight.
 
-Claude Code only remembers so much at once (~200k tokens). When that fills up, it
-auto-compacts: it silently crams your whole session into a summary on its own —
-no warning, no say in what gets cut — and usually drops something you needed
-right when you needed it.
+Claude Code only remembers so much at once — a fixed **context window**. Depending
+on the model that's 200K tokens (e.g. Haiku) up to **1M** (Opus 4.x, Sonnet 4.6,
+Fable 5). When it fills up, Claude Code auto-compacts: it silently crams your whole
+session into a summary on its own — no warning, no say in what gets cut — and
+usually drops something you needed right when you needed it.
 
-Astral's job: **tell you before that happens, and let you choose what to drop**
+But hitting the cap isn't the only problem. **Accuracy degrades long before the
+window is full** — the more you stuff into context, the more the model misses,
+confuses, or hallucinates ("context rot"). A 1M window doesn't fix that; it just
+lets you fill it with more noise. Keeping the working set lean is about *quality*,
+not only about dodging auto-compact.
+
+Astral's job: **tell you before context gets heavy, and let you choose what to drop**
 instead of letting Claude blindly flatten everything.
 
-Think of your context window as a mana pool. Auto-compact is running dry mid-fight.
-Astral watches the meter and helps you spend deliberately. (That's where the analogy
+Think of your context window as a mana pool. Auto-compact is running dry mid-fight;
+context rot is your spells getting weaker as the pool fills with sludge. Astral
+watches the meter and helps you spend deliberately. (That's where the analogy
 ends — nothing below depends on it.)
 
 ---
@@ -138,8 +146,8 @@ prefer the one-line installer above — it wires the exact interpreter that ran 
 
 | Var | Default | Meaning |
 |---|---|---|
-| `ASTRAL_WINDOW` | `200000` | Assumed context window, tokens |
-| `ASTRAL_BUCKETS` | `50,65,80` | Warn bands (percent) |
+| `ASTRAL_WINDOW` | `200000` | Token budget the bands are measured against. **Not necessarily your model's full window** — most current models are 1M, but you don't want to ride context to 800K (that's deep in the accuracy-rot zone). Treat this as your *quality* budget: the point past which you'd rather shed work than keep piling on. Raise it if you genuinely want later warnings. |
+| `ASTRAL_BUCKETS` | `50,65,80` | Warn bands, as a percent of `ASTRAL_WINDOW` |
 | `ASTRAL_READ_TOKENS` | `8000` | Est-token threshold (bytes/4) that gates an unbounded read |
 | `ASTRAL_READ_ALLOW` | *(empty)* | Comma-separated globs that bypass the read-gate (matched on full path + basename), e.g. `*/CHANGELOG.md,*.csv` |
 | `ASTRAL_STALE_DAYS` | `60` | `/astral:audit`: days since last use before an agent/skill is "stale" |

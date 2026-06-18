@@ -128,6 +128,13 @@ def real_tokens(path):
     return scan(path)[0]
 
 
+def state_name(session_id):
+    """Per-session state filename so two terminals in one project don't clobber
+    each other's badge. Falls back to the shared name when no session id."""
+    sid = "".join(c for c in (session_id or "") if c.isalnum() or c in "-_")
+    return f"state-{sid}.json" if sid else "state.json"
+
+
 def main():
     try:
         data = json.load(sys.stdin)
@@ -142,7 +149,7 @@ def main():
     pct = round(tokens / window * 100, 1) if window else 0.0
 
     state_dir = os.path.join(cwd, ".astral")
-    state_path = os.path.join(state_dir, "state.json")
+    state_path = os.path.join(state_dir, state_name(data.get("session_id")))
     prev = {}
     try:
         with open(state_path) as f:

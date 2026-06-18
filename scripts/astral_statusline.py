@@ -21,7 +21,9 @@ def main():
     except Exception:
         return
     cwd = (data.get("workspace") or {}).get("current_dir") or data.get("cwd") or os.getcwd()
-    path = os.path.join(cwd, ".astral", "state.json")
+    sid = "".join(c for c in (data.get("session_id") or "") if c.isalnum() or c in "-_")
+    fname = f"state-{sid}.json" if sid else "state.json"
+    path = os.path.join(cwd, ".astral", fname)
     # Refuse symlinks (a planted link could feed attacker-controlled bytes).
     if os.path.islink(path) or not os.path.isfile(path):
         return

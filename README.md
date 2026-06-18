@@ -66,105 +66,260 @@ Plus `/astral:status` to see your current level and what's done at any time.
 
 ## Install
 
-One line. Idempotent — safe to re-run.
+One line, ~10 seconds, idempotent (safe to re-run).
+
+### Prerequisites
+
+- `python3` and `git` — both preinstalled on macOS/Linux. On Windows, install
+  [Python](https://www.python.org/downloads/) (check "Add to PATH") and
+  [Git](https://git-scm.com/download/win).
+- Claude Code v2.1.132+ for the statusline badge (older versions still get hooks +
+  commands; the badge just falls back to per-session state).
+
+### macOS / Linux / WSL / Git Bash
 
 ```bash
-# macOS / Linux / WSL / Git Bash
 curl -fsSL https://raw.githubusercontent.com/sourikduttanyu/astral/master/install.sh | bash
 ```
 
+### Windows (PowerShell 5.1+)
+
 ```powershell
-# Windows (PowerShell 5.1+)
 irm https://raw.githubusercontent.com/sourikduttanyu/astral/master/install.ps1 | iex
 ```
 
-Takes ~10 seconds. Needs `python3` + `git` (both preinstalled on macOS/Linux). It
-clones to `~/.claude/astral`, drops the commands into `~/.claude/commands/astral/`,
-and merges the two hooks into `~/.claude/settings.json` (your other settings and
-hooks are preserved). **Restart Claude Code** (or run `/hooks`) afterward.
+### What the installer does
 
-Then type **`/astral:help`** to get started. Warnings fire on their own.
+1. Clones the repo to `~/.claude/astral`.
+2. Copies the slash commands into `~/.claude/commands/astral/`.
+3. Merges the two hooks into `~/.claude/settings.json` — your existing settings and
+   hooks are preserved, not overwritten.
+4. Wires the statusline badge (chaining after any existing statusline).
 
-**Update:** re-run the same one-line install command. It `git pull`s the clone,
-re-copies commands, and re-merges hooks — so fixes actually reach your live setup.
-(The hooks run from the clone; commands are copied, so a bare `git pull` updates
-scripts but not commands — re-running the installer is the reliable path.) Restart
-Claude Code afterward.
+### Verify the install
 
-**Uninstall:** `ASTRAL_UNINSTALL=1 bash install.sh` (or `$env:ASTRAL_UNINSTALL=1` on
-Windows).
+```bash
+# 1. Restart Claude Code, or reload hooks in an open session:
+/hooks
+
+# 2. Confirm Astral is live:
+/astral:status     # current context %, window, model, band
+/astral:help       # commands + config at a glance
+```
+
+You should also see the badge — `[ASTRAL 23%]` — in your statusline. Warnings fire on
+their own from here; nothing else to configure.
+
+### Update
+
+Re-run the same one-line install command for your OS. It `git pull`s the clone,
+re-copies commands, and re-merges hooks, then restart Claude Code:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/sourikduttanyu/astral/master/install.sh | bash
+```
+
+> A bare `git pull` in `~/.claude/astral` updates the hook scripts (they run from the
+> clone) but **not** the commands (those are copied into `~/.claude/commands/astral/`).
+> Re-running the installer is the reliable path.
+
+### Uninstall
+
+```bash
+# macOS / Linux / WSL / Git Bash
+ASTRAL_UNINSTALL=1 bash ~/.claude/astral/install.sh
+```
+
+```powershell
+# Windows (PowerShell)
+$env:ASTRAL_UNINSTALL=1; irm https://raw.githubusercontent.com/sourikduttanyu/astral/master/install.ps1 | iex
+```
+
+This removes the hooks, commands, and statusline wiring, and restores any statusline
+you had before.
 
 ### Manual / as a plugin
 
-Prefer the plugin loader? Clone anywhere and reference it; the repo is also a valid
-Claude Code plugin (`.claude-plugin/plugin.json` + `hooks/hooks.json`, paths use
-`${CLAUDE_PLUGIN_ROOT}`). Note: `hooks.json` invokes `python3` (it can't self-detect
-the interpreter the way the installer does). On Windows, where the binary is usually
-`python`, prefer the one-line installer above — it wires the exact interpreter that
-ran it.
+The repo is also a valid Claude Code plugin (`.claude-plugin/plugin.json` +
+`hooks/hooks.json`, paths use `${CLAUDE_PLUGIN_ROOT}`). Clone anywhere and load it via
+the plugin loader:
+
+```bash
+git clone https://github.com/sourikduttanyu/astral.git
+# then point Claude Code's plugin loader at the cloned directory
+```
+
+> `hooks/hooks.json` invokes `python3` (it can't self-detect the interpreter the way
+> the installer does). On Windows, where the binary is usually `python`, prefer the
+> one-line installer above — it wires the exact interpreter that ran it.
 
 ---
 
-## Example usage
+## Features — usage & examples
 
-Nothing to learn up front — the Watcher and Read-gate run on their own after install.
-The commands are there for when you want to act.
+Nothing to learn up front: the **Watcher**, **Read-gate**, **Switch-guard**, and
+**Recall** capture run on their own after install. The commands (**Checkpoint**,
+**Status**, **Window**, **Audit**) are there for when you want to act. Each feature
+below has what it does, how to use it, and a worked example.
 
-**First run — confirm it's live:**
+**Mental model:** `status` to look, `checkpoint` to shed, `window` to fix the basis,
+`audit` to prune. The automatic pieces handle the rest hands-off.
 
-```bash
-/astral:status   # current context %, window, model, band
-/astral:help     # commands + config at a glance
+### Watcher — warns before auto-compact
+
+- **Trigger:** automatic, on every prompt (`UserPromptSubmit`). Nothing to run.
+- **What it does:** reads real context usage from the transcript and warns when you
+  cross a band — `40% / 55% / 70%` of the window by default — naming what work is
+  already DONE and offering a checkpoint, *before* auto-compact rewrites your session.
+- **How to use it:** just keep working. When a warning fires, decide: keep going,
+  `/astral:checkpoint`, or `/clear`.
+
+**Example.** Mid-session your badge ticks past 55%. Astral surfaces:
+
+```text
+[ASTRAL] Context at 56% (112K / 200K). Crossed the 55% band.
+Done so far: (1) fixed the recall MCP path bug, (2) verified recall end-to-end.
+Consider /astral:checkpoint to shed finished work before auto-compact.
 ```
 
-You'll also start seeing the badge — `[ASTRAL 23%]` — in your statusline.
+Tune the bands with `ASTRAL_BUCKETS` (see [Config](#config-env-vars)):
 
-### Common use cases
+```bash
+export ASTRAL_BUCKETS=50,70,85   # warn later, e.g. on a roomy 1M window
+```
 
-**1. A long session creeping toward auto-compact.**
-The badge passes 55%. Astral tells you what's already DONE and offers a checkpoint.
-Run it, pick the finished work, paste the `/compact` line it gives you:
+### Checkpoint — shed finished work, keep the live thread
+
+- **Trigger:** you run `/astral:checkpoint`.
+- **What it does:** lists completed, self-contained work-units, lets you multi-select
+  which to shed, writes a resume-ready summary to `.astral/checkpoint-<UTC-ts>.md`, and
+  hands you a steered `/compact` line that drops the done work but keeps the live thread.
+- **How to use it:**
 
 ```bash
 /astral:checkpoint
 ```
 
-The done work is summarized to a durable `.astral/checkpoint-<ts>.md` and shed from
-context — the live thread stays. No surprise compaction mid-task.
+**Example.** You've finished a bug fix and are starting a new feature. Run the command;
+Astral lists the done units, you pick the bug-fix one, and it returns a line to paste:
 
-**2. Reading a big file or log without flooding context.**
-You `Read` a 5,000-line log. The Read-gate intercepts and offers to hand it to a
-subagent, so only the answer comes back — not 50K tokens of raw log. Allow the direct
-read or let it delegate. Nothing to type.
-
-**3. Switching models mid-session (Opus ↔ Sonnet).**
-Different windows (Sonnet 200K, Opus 1M). On a model change Astral asks which window
-applies. You can also set it directly:
-
-```bash
-/astral:window opus     # 1M basis
-/astral:window sonnet   # 200K basis
-/astral:window 500000   # custom (e.g. a Cursor window)
-/astral:window auto     # back to auto-detect
+```text
+/compact Keep: the new export-feature work and open files src/export.py, tests/test_export.py.
+Drop: completed work — recall MCP path fix (verified), now saved in .astral/checkpoint-20260618T230114Z.md.
 ```
 
-Usually you won't need this — auto-detect locks onto the proven window and keeps it
-across compactions.
+Paste that `/compact` line yourself — Claude can't run slash commands. The `.md` file is
+your durable backup; the steered line shapes what stays in context.
 
-**4. Pruning tooling you never use.**
-Agents and skills load into *every* session. Find and disable the dead weight:
+### Read-gate — keep big file reads out of your context
+
+- **Trigger:** automatic, before any `Read` (`PreToolUse: Read`). Nothing to run.
+- **What it does:** if the target file is large (over `ASTRAL_READ_TOKENS`, default
+  `8000` est. tokens = `bytes / 4`) and the read is unbounded, it asks first and offers
+  to delegate the read to a subagent (Explore / general-purpose) that summarizes in its
+  own context — so a 50K-token log never lands in your main window.
+- **How to use it:** when prompted, allow the direct read or let it delegate. To always
+  bypass the gate for certain paths, set `ASTRAL_READ_ALLOW`:
 
 ```bash
-/astral:audit    # flags never-used or stale (>60d) agents/skills, reports tokens reclaimed
+# Comma-separated globs, matched on full path + basename:
+export ASTRAL_READ_ALLOW='*/CHANGELOG.md,*.csv,*/package-lock.json'
 ```
 
-**5. Starting something unrelated.**
-Type a prompt off-topic from the current session and the Switch-guard suggests
-`/clear` first (or a checkpoint of what's droppable) — so old context doesn't bleed
-into new work.
+**Example.** You ask Claude to read a 5,000-line server log. The gate intercepts:
+instead of dumping ~40K tokens into your session, a subagent reads it and returns just
+the answer ("3 OOM errors at 14:02, 14:09, 14:31"). Your main context stays lean.
 
-**Mental model:** `status` to look, `checkpoint` to shed, `window` to fix the basis,
-`audit` to prune. The Watcher and Read-gate handle the rest hands-off.
+### Switch-guard — nudge to start clean on unrelated work
+
+- **Trigger:** automatic, on every prompt (`UserPromptSubmit`). Nothing to run.
+- **What it does:** if your new prompt starts work unrelated to the current session, it
+  suggests `/clear` first; if you decline, it offers a checkpoint of what's droppable —
+  so stale context doesn't bleed into new work.
+- **How to use it:** when nudged, run `/clear` to start fresh, or decline and continue.
+
+**Example.** After a long debugging session you type "now help me write release notes."
+Astral notices the topic shift:
+
+```text
+[ASTRAL] This looks unrelated to the current debugging session.
+Consider /clear to start fresh, or /astral:checkpoint to shed the finished debugging work first.
+```
+
+### Status & Window — inspect and fix the basis
+
+- **`/astral:status`** — show current context level (percent + token count vs window),
+  completed vs in-flight work, and a one-line recommendation.
+
+```bash
+/astral:status
+```
+
+- **`/astral:window`** — assert the context window the bands measure against, per
+  project. Needed when the same model can have different windows (Sonnet 200K vs Opus
+  1M) or when using Cursor. Auto-detection usually handles this; override when it's
+  genuinely ambiguous.
+
+```bash
+/astral:window opus      # 1,000,000-token basis
+/astral:window sonnet    # 200,000-token basis
+/astral:window 500000    # custom integer (e.g. a Cursor window)
+/astral:window auto      # clear the override, back to auto-detect (also: reset)
+```
+
+**Example.** You switch from Sonnet to Opus mid-session. Astral asks which window
+applies; you confirm Opus and it reports: *"Astral window set to 1,000,000 tokens —
+bands now fire at 400K / 550K / 700K."* The setting lives in `.astral/window` and takes
+effect on your next prompt.
+
+### Audit — prune tooling you never use
+
+- **Trigger:** you run `/astral:audit`.
+- **What it does:** scans every installed agent/skill against real usage in your
+  transcripts, buckets them NEVER / STALE (> `ASTRAL_STALE_DAYS`, default 60) / ACTIVE,
+  reports tokens reclaimed per session, and hands you reversible `mv … .disabled/`
+  commands. Read-only analysis; nothing is deleted.
+- **How to use it:**
+
+```bash
+/astral:audit                       # default 60-day stale threshold
+ASTRAL_STALE_DAYS=90 /astral:audit  # only flag stale after 90 days
+```
+
+**Example.** The audit finds 12 agents never used in your transcripts, costing ~9K
+tokens loaded every session. You multi-select the never-used set; Astral hands you:
+
+```bash
+mv ~/.claude/agents/some-unused-agent.md ~/.claude/agents/.disabled/
+```
+
+Run those (or move them back later to re-enable). Restart Claude Code or run `/hooks`
+for the change to take effect.
+
+### Recall — re-fetch context that compaction evicted
+
+- **Trigger:** automatic capture on `PreCompact`; on-demand re-fetch via the
+  `recall(query, k)` MCP tool that Claude calls itself.
+- **What it does:** before compaction, snapshots the about-to-be-evicted turns to
+  `.astral/store/` and indexes them; later, when a step needs detail that was dropped,
+  Claude calls `recall()` to pull the right slice back — so re-hydration looks automatic.
+- **How to use it:** the installer registers the recall MCP server in user scope
+  (`~/.claude.json`), so it's available in **every** project; working inside a clone of
+  this repo also gets it via the repo's `.mcp.json`. Confirm it's connected, then it's
+  hands-off:
+
+```bash
+/mcp                 # should list astral-recall as connected
+```
+
+You can also nudge Claude explicitly: *"recall the error text from earlier."* Disable
+the whole store with `ASTRAL_STORE=0`; tune results with `ASTRAL_RECALL_K`. See
+[Recall](#recall-re-fetch-evicted-context) for the mechanics.
+
+**Example.** Forty turns ago Claude saw an exact stack trace; auto-compact has since
+dropped it. When you ask "what was that traceback?", Claude calls
+`recall(query="traceback OOM", k=5)` and the store returns the original lines from the
+snapshot — no need to re-run anything.
 
 ---
 
@@ -335,7 +490,7 @@ See [`bench/README.md`](bench/README.md) for method (arms, 3+ runs, caveats).
 
 ## Layout
 
-```
+```text
 astral/
   .claude-plugin/plugin.json   manifest
   .mcp.json                    recall MCP server wiring

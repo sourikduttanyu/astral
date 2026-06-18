@@ -37,9 +37,21 @@ for evt in list(h):
     if out: h[evt]=out
     else: h.pop(evt,None)
 s["hooks"]=h
+sl=s.get("statusLine")
+if isinstance(sl,dict) and "astral_statusline" in sl.get("command",""):
+    prev=s.pop("_astralPrevStatusLine",None)
+    if prev is not None:
+        s["statusLine"]=prev               # restore the badge we chained after
+    else:
+        c=sl.get("command",""); base=""
+        for sep in (" </dev/null; printf ' '; ", "; printf ' '; "):
+            if sep in c: base=c.split(sep,1)[0]; break
+        if base: s["statusLine"]={"type":"command","command":base}
+        else: s.pop("statusLine",None)
+s.pop("_astralPrevStatusLine",None)
 json.dump(s,open(p,"w"),indent=2)
 PY
-  say "removed hooks + commands. Repo left at $DIR (rm -rf to delete). Restart Claude Code."
+  say "removed hooks + commands + statusline. Repo left at $DIR (rm -rf to delete). Restart Claude Code."
   exit 0
 fi
 
@@ -81,6 +93,33 @@ pre.append({"matcher":"Read","hooks":[{"type":"command","command":f'"{py}" "{gat
 h["UserPromptSubmit"]=ups
 h["PreToolUse"]=pre
 s["hooks"]=h
+
+# ---- statusline: Astral context badge, chained after any existing one ----
+SL=os.path.join(scripts,"astral_statusline.py")
+acmd='"%s" "%s"'%(py,SL)
+def _cmd(x): return x.get("command","") if isinstance(x,dict) else (x or "")
+cur=s.get("statusLine"); prevsl=s.get("_astralPrevStatusLine")
+if prevsl is not None:                 # re-run: rebuild from the base we saved
+    base=_cmd(prevsl)
+elif cur is None:
+    base=""
+elif "astral_statusline" in _cmd(cur): # legacy/manual chain, no saved base: recover it
+    c=_cmd(cur); base=""
+    for sep in (" </dev/null; printf ' '; ", "; printf ' '; printf", "; printf ' '; "):
+        if sep in c: base=c.split(sep,1)[0]; break
+else:
+    base=_cmd(cur)                     # someone else's badge (e.g. caveman): chain after it
+if base:
+    s["_astralPrevStatusLine"]={"type":"command","command":base}
+    q='"$__d"'                          # tee stdin to both so neither starves for the JSON
+    s["statusLine"]={"type":"command","command":
+        "__d=$(cat); printf '%s' "+q+" | "+base+"; printf ' '; printf '%s' "+q+" | "+acmd}
+    print("[astral] statusline chained after existing badge")
+else:
+    s["statusLine"]={"type":"command","command":acmd}
+    s.pop("_astralPrevStatusLine",None)
+    print("[astral] statusline -> Astral context badge")
+
 os.makedirs(os.path.dirname(settings),exist_ok=True)
 json.dump(s,open(settings,"w"),indent=2)
 print("[astral] hooks merged into",settings)

@@ -155,6 +155,7 @@ astral/
   scripts/astral_monitor.py    watcher + switch-guard (UserPromptSubmit)
   scripts/astral_readgate.py   large-read delegation (PreToolUse: Read)
   scripts/astral_audit.py      unused-agent/skill auditor (/astral:audit)
+  scripts/astral_statusline.py context-budget badge (statusLine)
   commands/checkpoint.md       /astral:checkpoint
   commands/status.md           /astral:status
   commands/audit.md            /astral:audit
@@ -162,6 +163,18 @@ astral/
 ```
 
 State lives in `.astral/` inside whatever project you run Claude in (gitignore it).
+
+### Statusline badge
+
+The installer also wires a small statusline badge — `[ASTRAL 32%]` — that shows
+your current context level, colored by band (calm → amber → red as you approach
+auto-compact). It reads the same `.astral/state.json` the Watcher writes, so it
+costs nothing extra.
+
+If you already have a statusline (e.g. the caveman badge), the macOS/Linux
+installer **chains** Astral's after it — `[CAVEMAN] [ASTRAL 32%]` — and restores
+yours on uninstall. On Windows it sets the badge only when you have no statusline;
+otherwise it prints the one-liner to chain it yourself.
 
 ---
 

@@ -35,6 +35,9 @@ for evt in list(h):
     if out: h[evt]=out
     else: h.pop(evt,None)
 s["hooks"]=h
+sl=s.get("statusLine")
+if isinstance(sl,dict) and "astral_statusline" in sl.get("command",""):
+    s.pop("statusLine",None)
 json.dump(s,open(p,"w"),indent=2)
 '@
   Say "removed. Restart Claude Code."; exit 0
@@ -65,6 +68,19 @@ def strip(evt):
 ups=strip("UserPromptSubmit"); ups.append({"hooks":[{"type":"command","command":f'"{py}" "{mon}"'}]})
 pre=strip("PreToolUse");       pre.append({"matcher":"Read","hooks":[{"type":"command","command":f'"{py}" "{gate}"'}]})
 h["UserPromptSubmit"]=ups; h["PreToolUse"]=pre; s["hooks"]=h
+
+# statusline: set the Astral badge only if no statusline exists. Cross-shell
+# chaining isn't safe to auto-generate on Windows, so if one's already set we
+# leave it and print how to chain manually.
+SL=os.path.join(scripts,"astral_statusline.py"); acmd=f'"{py}" "{SL}"'
+cur=s.get("statusLine")
+if cur is None:
+    s["statusLine"]={"type":"command","command":acmd}
+    print("[astral] statusline -> Astral context badge")
+elif "astral_statusline" not in (cur.get("command","") if isinstance(cur,dict) else ""):
+    print("[astral] existing statusline left as-is. To add the badge, chain it after yours:")
+    print("[astral]   "+acmd)
+
 os.makedirs(os.path.dirname(settings),exist_ok=True)
 json.dump(s,open(settings,"w"),indent=2)
 print("[astral] hooks merged into",settings)

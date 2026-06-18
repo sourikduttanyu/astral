@@ -13,17 +13,20 @@ everything.
 | Piece | Trigger | Behavior |
 |---|---|---|
 | **Watcher** | every prompt | Estimates context usage from the transcript. When it crosses a band (50% / 65% / 80% by default), tells you what work is **done** and offers `/astral:checkpoint` — *before* autocompact, not after. |
-| **Checkpoint** | `/astral:checkpoint` | Lists completed work-units, lets you **pick which to shed** (multi-select), writes a resume-ready summary to `.astral/checkpoint-<ts>.md`, then you `/clear`. |
+| **Checkpoint** | `/astral:checkpoint` | Lists completed work-units, lets you **pick which to shed** (multi-select), writes a resume-ready summary to `.astral/checkpoint-<ts>.md`, then hands you a **steered `/compact` line** that drops the done work but keeps the live thread. |
 | **Read-gate (Courier)** | before any `Read` | If the target file is large (>1500 lines) and unbounded, blocks the read and has Claude offer you **subagent options** (Explore / general-purpose) so a big dump never lands in your main context. |
 | **Switch-guard** | every prompt | If your prompt starts work unrelated to the current session, Claude suggests `/clear` first; if you decline, it offers a checkpoint of what's droppable. |
 | **Status** | `/astral:status` | Shows current context level + completed vs in-flight work. |
 
 ## Honest limits
 
-- **No native selective/partial compaction exists in Claude Code.** Astral can't
-  compact one region and keep another. The real lever is *summarize-to-file +
-  `/clear`*, which is what `/astral:checkpoint` automates. The "pick what to
-  compact" UX is "pick what completed work to checkpoint and drop."
+- **No native selective/verbatim compaction exists in Claude Code.** Astral can't
+  compact one region and keep another. The only real selectivity is `/compact`'s
+  instruction text. `/astral:checkpoint` uses a **hybrid** flow: write done-work
+  to a durable `.md` *and* generate a steered `/compact Keep:… Drop:…` line. The
+  "pick what to compact" UX is "pick what completed work to shed."
+- **Compaction is always user-triggered.** Hooks and Claude cannot run slash
+  commands; Astral prompts and steers, you run `/compact` (or `/clear`).
 - **Token count is an estimate** (transcript bytes ÷ 4), biased to warn early.
   It is not the model's exact accounting. Tune the window/bands if it's off.
 - Hooks can't render menus or spawn subagents themselves — they *instruct Claude*
